@@ -1,0 +1,18 @@
+# --- JAVA & IntelliJ ---
+.idea/
+*.iml
+out/
+build/
+.gradle/
+target/
+
+# --- Python & ROS ---
+__pycache__/
+*.pyc
+/robot-ws/build/
+/robot-ws/install/
+/robot-ws/log/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
