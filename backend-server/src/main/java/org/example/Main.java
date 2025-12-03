@@ -16,6 +16,9 @@ public class Main {
 
         // 연결된 후에 전송!
         System.out.println("✨ 로봇 감지됨! 명령 전송!");
+<<<<<<< HEAD
         robotSocketService.sendToMessage("FORWARD");
+=======
+>>>>>>> e900f30abf7b6d1d0c17966a62afc61e3f2aa454
     }
 }

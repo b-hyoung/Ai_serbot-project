@@ -13,10 +13,7 @@ dependencies {
     testImplementation platform('org.junit:junit-bom:5.10.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-<<<<<<< HEAD
-=======
     implementation 'org.json:json:20231013' // JSON 파싱 도구
->>>>>>> e900f30abf7b6d1d0c17966a62afc61e3f2aa454
 }
 
 test {
