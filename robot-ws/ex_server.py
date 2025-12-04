@@ -28,10 +28,14 @@ def start_listening(sock):
             if command == "FORWARD":
                 print("전진!")
                 bot.forward()
-                time.sleep(2)
-                bot.backward(30)
-                time.sleep(2)
+            elif command == "BACKWARD":
+                bot.backward()
+            elif command == "LEFT":
+                bot.move(90,30)
+            elif command == "RIGHT":
+                bot.move(270,30)
             elif command == "STOP":
+                time.sleep(1)
                 print("정지!")
 
         except Exception as e:
