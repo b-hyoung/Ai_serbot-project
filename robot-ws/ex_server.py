@@ -35,7 +35,7 @@ def start_listening(sock):
             elif command == "RIGHT":
                 bot.move(270,30)
             elif command == "STOP":
-                time.sleep(1)
+                bot.stop()
                 print("정지!")
 
         except Exception as e:
@@ -68,7 +68,7 @@ def start_sending_sensor(sock):
             # 로그가 너무 빠르면 정신없으니까 1초에 한 번만 출력
             # print(f"📤 전송: {data}") 
 
-            time.sleep(0.5) # 0.5초 대기
+            time.sleep(30) # 0.5초 대기
 
     except Exception as e:
         print(f"송신 에러: {e}")
