@@ -8,7 +8,7 @@ public class Main {
     public static void main(String[] args) throws InterruptedException {
         RobotSocketService robotSocketService = new RobotSocketService();
         robotSocketService.startServer();
-        // 로봇이 연결 된 후 보내주기 -> 테스트니까 언제 올지 모름 연결이
+
         System.out.println("⏳ 로봇 접속을 기다리는 중...");
         while (!robotSocketService.isConnected()) {
             Thread.sleep(2000); // 1초 쉬기
@@ -16,6 +16,5 @@ public class Main {
 
         // 연결된 후에 전송!
         System.out.println("✨ 로봇 감지됨! 명령 전송!");
-        // robotSocketService.sendToMessage("FORWARD");
     }
 }

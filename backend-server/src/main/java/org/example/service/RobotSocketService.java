@@ -83,19 +83,7 @@ public class RobotSocketService {
     }
 
     // 서버 자체에서 강제로 로봇에게 보낼 때 쓰는 함수 (테스트용)
-    public void sendToRobot(String command) {
-        try {
-            if (isConnected()) {
-                PrintWriter out = new PrintWriter(rbotSocket.getOutputStream(), true);
-                out.println(command);
-                System.out.println("[서버 직접 전송] " + command);
-            } else {
-                System.out.println("로봇 미연결: 전송 실패");
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
+
     //로봇 연결 여부 체크 --> 체크여부에 따라 센서값 받아오기 또는 값 전달 여부
     public boolean isConnected() {
         return this.rbotSocket != null && !this.rbotSocket.isClosed();
