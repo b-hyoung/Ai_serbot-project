@@ -28,6 +28,8 @@ def main():
     listener.daemon = True # 메인 종료시 까지 종료x ->별도의 수신을 받자마자 종료하면 x
     listener.start() # 시작
 
+    #소켓은 문자열x 바이트단위로 보내야하기때문에 b를 앞에 붙임
+    sock.sendall(b"ROLL:ROBOT\n")
     # 3. 송신은 메인 스레드가 직접 담당
     sending_sensor(sock)
     

@@ -82,6 +82,7 @@ public class Main extends JFrame {
                 socket = new Socket(SERVER_IP, SERVER_PORT);
                 socket.setTcpNoDelay(true); //딜레이 제거
                 out = new PrintWriter(socket.getOutputStream(), true);
+                out.println("ROLE:GUI");
 
                 SwingUtilities.invokeLater(() -> {
                     lblStatus.setText("상태: 서버 연결됨 (조종 가능)");
