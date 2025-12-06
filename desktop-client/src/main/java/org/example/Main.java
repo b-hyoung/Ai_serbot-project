@@ -15,8 +15,8 @@ public class Main extends JFrame {
     // --- 통신 관련 변수 ---
     private Socket socket;
     private PrintWriter out;
-    private final String SERVER_IP = "192.168.0.18"; // 내 컴퓨터(서버) 주소
-    private final int SERVER_PORT = 6000;
+    private final String SERVER_IP = "192.168.0.30"; // 내 컴퓨터(서버) 주소
+    private final int SERVER_PORT = 6001;
 
     // --- 화면 구성 요소 (라벨) ---
     private JLabel lblStatus, lblTemp, lblGas, lblFire;

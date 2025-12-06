@@ -5,31 +5,32 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 public class RobotSocketService {
-    private ServerSocket serverSocket;
-    private volatile Socket rbotSocket; // 로봇 소켓 보관용 (여러 스레드에서 공유)
-    private volatile Socket guiSocket;  // GUI 소켓 보관용 (여러 스레드에서 공유)
-    private final int PORT = 6000;
 
-    // 클라이언트 종류 구분용
-    private enum ClientRole {
-        ROBOT,
-        GUI
+    private final int PORT = 6000;          // 로봇 전용 포트
+    private ServerSocket serverSocket;
+    private volatile Socket robotSocket;    // 로봇 소켓
+    private GUISocketService guiService;    // GUI 서비스로 데이터 보내기용
+
+    // GUI 서비스 주입
+    public void setGuiService(GUISocketService guiService) {
+        this.guiService = guiService;
     }
 
     public void startServer() {
         new Thread(() -> {
             try {
                 serverSocket = new ServerSocket(PORT);
-                System.out.println("🤖 서버 시작! 로봇/GUI 연결 대기중 ... PORT : " + PORT);
+                System.out.println("🤖 로봇 서버 시작! PORT : " + PORT);
 
                 while (true) {
                     Socket clientSocket = serverSocket.accept();
-                    clientSocket.setTcpNoDelay(true); // 딜레이 제거
-                    System.out.println("새로운 손님이 접속했습니다: " + clientSocket.getInetAddress());
-
-                    handleConnection(clientSocket);
+                    clientSocket.setTcpNoDelay(true);
+                    System.out.println("🤖 새로운 로봇 접속: " + clientSocket.getInetAddress());
+                    handleRobotConnection(clientSocket);
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -37,86 +38,53 @@ public class RobotSocketService {
         }).start();
     }
 
-    // 각 클라이언트 연결 담당
-    private void handleConnection(Socket socket) {
+    // 로봇 연결 담당
+    private void handleRobotConnection(Socket socket) {
         new Thread(() -> {
-            ClientRole role = null;
-
             try {
-                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-
-                // 1) 먼저 "역할(ROLE)"부터 선언하도록 프로토콜 정의
-                // 예: "ROLE:ROBOT" 또는 "ROLE:GUI"
-                String firstLine = in.readLine();
-                if (firstLine == null) {
-                    System.out.println("❌ 첫 메시지 없이 연결 종료됨");
-                    return;
+                synchronized (this) {
+                    robotSocket = socket;
                 }
 
-                firstLine = firstLine.trim();
+                BufferedReader in = new BufferedReader(
+                        new InputStreamReader(socket.getInputStream())
+                );
 
-                if (firstLine.startsWith("ROLE:ROBOT")) {
-                    role = ClientRole.ROBOT;
-                    synchronized (this) {
-                        rbotSocket = socket;
-                    }
-                    System.out.println("🤖 로봇 클라이언트 등록 완료: " + socket.getInetAddress());
-                } else if (firstLine.startsWith("ROLE:GUI")) {
-                    role = ClientRole.GUI;
-                    synchronized (this) {
-                        guiSocket = socket;
-                    }
-                    System.out.println("💻 GUI 클라이언트 등록 완료: " + socket.getInetAddress());
-                } else {
-                    System.out.println("❌ 알 수 없는 역할: " + firstLine + " → 연결 종료");
-                    return;
-                }
-
-                // 2) 역할에 따라 메시지 중계
+                /* 타입에 따라 값 받아서 처리하기 */
                 String line;
                 while ((line = in.readLine()) != null) {
-                    if (role == ClientRole.ROBOT) {
-                        // 로봇 → GUI로 센서 데이터 등 전달
-                        System.out.println("🤖 로봇 -> GUI 전송: " + line);
 
-                        Socket gui = guiSocket;
-                        if (gui != null && !gui.isClosed()) {
-                            PrintWriter guiOut = new PrintWriter(gui.getOutputStream(), true);
-                            guiOut.println(line);
-                        }
-                    } else if (role == ClientRole.GUI) {
-                        // GUI → 로봇으로 명령 전달
-                        System.out.println("💻 GUI -> 로봇 명령: " + line);
+                    try {
+                        JsonObject json = JsonParser.parseString(line).getAsJsonObject();
+                        String type = json.get("type").getAsString();
 
-                        Socket robot = rbotSocket;
-                        if (robot != null && !robot.isClosed()) {
-                            PrintWriter robotOut = new PrintWriter(robot.getOutputStream(), true);
-                            robotOut.println(line);
+                        if (type.equals("CHAT")) {
+                            String text = json.get("text").getAsString();
+                            System.out.println("🗣 STT 명령: " + text);
+                        } else if (type.equals("SENSOR")) {
+                            double temp = json.get("temp").getAsDouble();
+                            boolean fire = json.get("fire").getAsBoolean();
+                            System.out.println("🔥 센서: temp=" + temp + ", fire=" + fire);
                         }
+
+                        // GUI에는 원본 JSON 그대로 전달
+                        guiService.sendToGui(line);
+
+                    } catch (Exception e) {
+                        System.out.println("⚠ JSON 파싱 실패 → raw forwarding");
+                        guiService.sendToGui(line);
                     }
                 }
             } catch (Exception e) {
-                System.out.println("❌ 손님 연결 중 오류 또는 끊김: " + e.getMessage());
+                System.out.println("🤖 로봇 연결 중 오류 또는 끊김: " + e.getMessage());
             } finally {
-                // 연결 종료 시 정리
                 try {
-                    if (role == ClientRole.ROBOT) {
-                        synchronized (this) {
-                            if (socket == rbotSocket) {
-                                System.out.println("🤖 로봇 연결 종료: " + socket.getInetAddress());
-                                rbotSocket = null;
-                            }
-                        }
-                    } else if (role == ClientRole.GUI) {
-                        synchronized (this) {
-                            if (socket == guiSocket) {
-                                System.out.println("💻 GUI 연결 종료: " + socket.getInetAddress());
-                                guiSocket = null;
-                            }
+                    synchronized (this) {
+                        if (socket == robotSocket) {
+                            System.out.println("🤖 로봇 연결 종료: " + socket.getInetAddress());
+                            robotSocket = null;
                         }
                     }
-
                     socket.close();
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -125,9 +93,24 @@ public class RobotSocketService {
         }).start();
     }
 
+    // GUI 쪽에서 로봇으로 명령 보낼 때 호출
+    public void sendToRobot(String msg) {
+        try {
+            Socket robot = robotSocket;
+            if (robot != null && !robot.isClosed()) {
+                PrintWriter out = new PrintWriter(robot.getOutputStream(), true);
+                out.println(msg);
+            } else {
+                System.out.println("⚠ 로봇 소켓이 없어서 메시지 전송 불가: " + msg);
+            }
+        } catch (Exception e) {
+            System.out.println("⚠ 로봇으로 데이터 전송 중 오류: " + e.getMessage());
+        }
+    }
+
     // 로봇 연결 여부 체크
     public boolean isConnected() {
-        Socket robot = this.rbotSocket;
+        Socket robot = this.robotSocket;
         return robot != null && !robot.isClosed();
     }
 }
