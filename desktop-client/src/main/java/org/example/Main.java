@@ -36,7 +36,7 @@ public class Main extends JFrame {
     // --- 통신 관련 변수 ---
     private Socket socket;
     private PrintWriter out;
-    private final String SERVER_IP = "192.168.0.30"; // 내 컴퓨터(서버) 주소
+    private final String SERVER_IP = "192.168.0.14"; // 내 컴퓨터(서버) 주소
     private final int SERVER_PORT = 6001;
 
     // --- 화면 구성 요소 (라벨/패널) ---
@@ -162,6 +162,26 @@ public class Main extends JFrame {
             }
         }).start();
     }
+    // --- MOCK: PAD 목데이터 시나리오 재생 ---
+    private void playMockPadScenario(List<String> lines, int delayMs) {
+        if (out == null) {
+            System.out.println("[MOCK] 서버에 아직 연결 안 됨. 시나리오 전송 불가");
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                for (String json : lines) {
+                    out.println(json);   // 서버로 전송
+                    System.out.println("[MOCK PAD 전송] " + json);
+                    Thread.sleep(delayMs);
+                }
+                System.out.println("[MOCK] 시나리오 재생 완료");
+            } catch (InterruptedException e) {
+                System.out.println("[MOCK] 시나리오 중단");
+            }
+        }).start();
+    }
 
     // --- LIDAR JSON 처리 ---
     // 기대 JSON 형식:
@@ -263,6 +283,17 @@ public class Main extends JFrame {
             case KeyEvent.VK_A: cmd = "LEFT";     break;
             case KeyEvent.VK_D: cmd = "RIGHT";    break;
             case KeyEvent.VK_SPACE: cmd = "STOP"; break;
+        }
+        // 2) F5: 간단 전진-정지 시나리오 실행
+        if (keyCode == KeyEvent.VK_F5) {
+            System.out.println("[MOCK] F5: ForwardStop 시나리오 시작");
+            playMockPadScenario(MockPadData.scenarioForwardStop(), 80);
+        }
+
+        // 3) F6: 실제 로그와 비슷한 패턴 실행
+        if (keyCode == KeyEvent.VK_F6) {
+            System.out.println("[MOCK] F6: FromLogLike 시나리오 시작");
+            playMockPadScenario(MockPadData.scenarioFromLogLike(), 80);
         }
 
         if (!cmd.isEmpty()) {
