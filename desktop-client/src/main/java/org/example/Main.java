@@ -36,7 +36,7 @@ public class Main extends JFrame {
     // --- 통신 관련 변수 ---
     private Socket socket;
     private PrintWriter out;
-    private final String SERVER_IP = "192.168.0.18"; // 내 컴퓨터(서버) 주소
+    private final String SERVER_IP = "192.168.0.31"; // 내 컴퓨터(서버) 주소
     private final int SERVER_PORT = 6000;
 
     // --- 화면 구성 요소 (라벨/패널) ---
@@ -235,6 +235,23 @@ public class Main extends JFrame {
     }
 
     // --- [기능 3] 키보드 명령 전송 ---
+    // private void sendDriveCommand(int keyCode) {
+    //     if (out == null) return;
+
+    //     String cmd = "";
+    //     switch (keyCode) {
+    //         case KeyEvent.VK_W: cmd = "FORWARD";  break;
+    //         case KeyEvent.VK_S: cmd = "BACKWARD"; break;
+    //         case KeyEvent.VK_A: cmd = "LEFT";     break;
+    //         case KeyEvent.VK_D: cmd = "RIGHT";    break;
+    //         case KeyEvent.VK_SPACE: cmd = "STOP"; break;
+    //     }
+
+    //     if (!cmd.isEmpty()) {
+    //         out.println(cmd);
+    //         System.out.println("보냄: " + cmd);
+    //     }
+    // }
     private void sendDriveCommand(int keyCode) {
         if (out == null) return;
 
@@ -248,8 +265,11 @@ public class Main extends JFrame {
         }
 
         if (!cmd.isEmpty()) {
-            out.println(cmd);
-            System.out.println("보냄: " + cmd);
+           // JSON 형식으로 전송: {"type":"KEY","cmd":"FORWARD"}
+          String json = String.format("{\"type\":\"KEY\",\"cmd\":\"%s\"}", cmd);
+
+          out.println(json);                // 서버로 전송
+          System.out.println("보냄: " + json);
         }
     }
 
