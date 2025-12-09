@@ -4,6 +4,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.example.state.SensorState;
 
+import java.time.LocalDateTime;
+
 public class StateUpdater {
 
     public static void applyJson(String line, SensorState state) {
@@ -16,20 +18,19 @@ public class StateUpdater {
                 String name = obj.get("name").getAsString();
 
                 switch (name) {
-                    case "FLAME" -> state.flame = obj.get("value").getAsDouble();
-                    case "CO2" -> state.co2 = obj.get("value").getAsDouble();
+                    case "FLAME" -> state.setFlame(obj.get("value").getAsDouble());
+                    case "CO2" -> state.setCo2(obj.get("value").getAsDouble());
                     case "DUST" -> {
-                        state.pm25 = obj.get("pm25").getAsDouble();
-                        state.pm10 = obj.get("pm10").getAsDouble();
+                        state.setPm25(obj.get("pm25").getAsDouble());
+                        state.setPm10(obj.get("pm10").getAsDouble());
                     }
-                    case "PIR" -> state.pir = obj.get("detected").getAsBoolean();
-                    case "ULTRASONIC" -> state.ultrasonic = obj.get("distance").getAsDouble();
+                    case "PIR" -> state.setPir(obj.get("detected").getAsBoolean());
+                    case "ULTRASONIC" -> state.setUltrasonic(obj.get("distance").getAsDouble());
                 }
             }
 
             case "STT" -> {
-                state.lastStt = obj.get("text").getAsString();
-                state.lastSttTime = System.currentTimeMillis();
+                state.setLastStt(obj.get("text").getAsString());
             }
         }
     }
