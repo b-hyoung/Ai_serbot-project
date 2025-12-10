@@ -5,7 +5,9 @@ out/
 build/
 .gradle/
 target/
-
+bin/
+target/
+*.class
 # --- Python & ROS ---
 __pycache__/
 *.pyc
