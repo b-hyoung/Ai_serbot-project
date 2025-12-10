@@ -11,8 +11,8 @@ public class OpenAiClient {
 
     private static final String API_KEY = EnvLoader.get("OPENAI_API_KEY");
     private static final String OPENAI_URL = "https://api.openai.com/v1/responses";
-
     public static String callOpenAi(String prompt) {
+    System.out.println("API_KEY = " + API_KEY);
         try {
             String jsonBody = """
             {
