@@ -5,18 +5,46 @@ import java.awt.*;
 
 public class MYGUI extends JFrame {
 
+    // --- UI 컴포넌트 참조 ---
+    private JLabel tempValue1, tempValue2, gasValue, fireValue;
+    private JLabel statusLabel;
+
+    private JLabel lblTemp;
+    private JLabel lblGas;
+    private JLabel lblFire;
+    private JLabel lblPIR;
+    private JLabel lblHumidity;
+    private JLabel lblPM25;
+    private JLabel lblPM10;
     public MYGUI() {
         setTitle("Frame 1 - AI Servot Robot Dashboard");
         setSize(1400, 900);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
+        lblTemp = new JLabel("Temp: ---");
+        lblGas = new JLabel("Gas: ---");
+        lblFire = new JLabel("Fire: ---");
+        lblPIR = new JLabel("PIR: ---");
+        lblHumidity = new JLabel("Humidity: ---");
+        lblPM25 = new JLabel("PM2.5: ---");
+        lblPM10 = new JLabel("PM10: ---");
+
+
+
+
         // Main panel
         JPanel mainPanel = new JPanel();
         mainPanel.setLayout(new BorderLayout(10, 10));
         mainPanel.setBackground(new Color(17, 24, 39));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
-
+        mainPanel.add(lblTemp);
+        mainPanel.add(lblGas);
+       mainPanel.add(lblFire);
+       mainPanel.add(lblPIR);
+       mainPanel.add(lblHumidity);
+       mainPanel.add(lblPM25);
+      mainPanel.add(lblPM10);
         // Header
         JPanel headerPanel = createHeader();
         mainPanel.add(headerPanel, BorderLayout.NORTH);
@@ -49,6 +77,37 @@ public class MYGUI extends JFrame {
         setVisible(true);
     }
 
+    // === 센서 데이터 업데이트 메서드 ===
+    public void updateSensorData(double temp, double gas, boolean fire, boolean pir, double humidity) {
+        tempValue1.setText(String.format("%.1f °C", temp));
+        tempValue2.setText(String.format("%.1f °C", temp));
+        gasValue.setText(String.format("%.1f ppm", gas));
+
+        if (fire) {
+            fireValue.setText("🚨 비상!");
+            fireValue.setForeground(new Color(220, 38, 38));
+        } else {
+            fireValue.setText("정상");
+            fireValue.setForeground(Color.BLACK);
+        }
+    }
+
+    /**
+     * 서버 연결 상태를 업데이트하는 메서드.
+     * connected == true -> 녹색 상태표시
+     * connected == false -> 빨간 상태표시
+     */
+    public void updateConnectionStatus(boolean connected) {
+        // HTML을 이용해 점(●) 색상을 바꿔 보여주도록 함.
+        if (connected) {
+            statusLabel.setText("<html><font color='lime'>●</font> System Active • All Sensors Online</html>");
+            statusLabel.setForeground(new Color(0, 255, 0)); // 필요시 텍스트 색도 변경
+        } else {
+            statusLabel.setText("<html><font color='red'>●</font> Disconnected • Check Server</html>");
+            statusLabel.setForeground(new Color(220, 50, 50));
+        }
+    }
+
     private JPanel createHeader() {
         JPanel header = new JPanel();
         header.setLayout(new BorderLayout());
@@ -79,14 +138,14 @@ public class MYGUI extends JFrame {
         title1.setFont(new Font("Arial", Font.BOLD, 14));
         title1.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JLabel value1 = new JLabel("0.0 °C");
-        value1.setFont(new Font("Arial", Font.BOLD, 28));
-        value1.setAlignmentX(Component.CENTER_ALIGNMENT);
+        tempValue1 = new JLabel("0.0 °C");
+        tempValue1.setFont(new Font("Arial", Font.BOLD, 28));
+        tempValue1.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         panel1.add(Box.createRigidArea(new Dimension(0, 40)));
         panel1.add(title1);
         panel1.add(Box.createRigidArea(new Dimension(0, 20)));
-        panel1.add(value1);
+        panel1.add(tempValue1);
         panel1.add(Box.createRigidArea(new Dimension(0, 40)));
 
         topRow.add(panel1);
@@ -101,14 +160,14 @@ public class MYGUI extends JFrame {
         title2.setFont(new Font("Arial", Font.BOLD, 14));
         title2.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JLabel value2 = new JLabel("0.0 ppm");
-        value2.setFont(new Font("Arial", Font.BOLD, 28));
-        value2.setAlignmentX(Component.CENTER_ALIGNMENT);
+        gasValue = new JLabel("0.0 ppm");
+        gasValue.setFont(new Font("Arial", Font.BOLD, 28));
+        gasValue.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         panel2.add(Box.createRigidArea(new Dimension(0, 40)));
         panel2.add(title2);
         panel2.add(Box.createRigidArea(new Dimension(0, 20)));
-        panel2.add(value2);
+        panel2.add(gasValue);
         panel2.add(Box.createRigidArea(new Dimension(0, 40)));
 
         topRow.add(panel2);
@@ -123,14 +182,14 @@ public class MYGUI extends JFrame {
         title3.setFont(new Font("Arial", Font.BOLD, 14));
         title3.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JLabel value3 = new JLabel("정상");
-        value3.setFont(new Font("Arial", Font.BOLD, 28));
-        value3.setAlignmentX(Component.CENTER_ALIGNMENT);
+        fireValue = new JLabel("정상");
+        fireValue.setFont(new Font("Arial", Font.BOLD, 28));
+        fireValue.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         panel3.add(Box.createRigidArea(new Dimension(0, 40)));
         panel3.add(title3);
         panel3.add(Box.createRigidArea(new Dimension(0, 20)));
-        panel3.add(value3);
+        panel3.add(fireValue);
         panel3.add(Box.createRigidArea(new Dimension(0, 40)));
 
         topRow.add(panel3);
@@ -239,14 +298,14 @@ public class MYGUI extends JFrame {
         rightTitle.setFont(new Font("Arial", Font.BOLD, 14));
         rightTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JLabel rightValue = new JLabel("0.0 °C");
-        rightValue.setFont(new Font("Arial", Font.BOLD, 32));
-        rightValue.setAlignmentX(Component.CENTER_ALIGNMENT);
+        tempValue2 = new JLabel("0.0 °C");
+        tempValue2.setFont(new Font("Arial", Font.BOLD, 32));
+        tempValue2.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         rightPanel.add(Box.createVerticalGlue());
         rightPanel.add(rightTitle);
         rightPanel.add(Box.createRigidArea(new Dimension(0, 20)));
-        rightPanel.add(rightValue);
+        rightPanel.add(tempValue2);
         rightPanel.add(Box.createVerticalGlue());
 
         middleRow.add(rightPanel, BorderLayout.EAST);
@@ -344,9 +403,13 @@ public class MYGUI extends JFrame {
         leftPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
         leftPanel.setBackground(new Color(31, 41, 55));
 
-        JLabel statusLabel = new JLabel("● System Active • All Sensors Online");
-        statusLabel.setFont(new Font("Arial", Font.PLAIN, 12));
-        statusLabel.setForeground(Color.WHITE);
+        // 상태 라벨 (초기값: disconnected)
+        statusLabel = new JLabel();
+        statusLabel.setFont(new Font("Arial", Font.PLAIN, 20));
+        // label 배경/전경 색을 보이게 하려면 opaque 설정 필요 (여기서는 전경색 + HTML 점으로 처리)
+        statusLabel.setOpaque(false);
+        statusLabel.setText("<html><font color='red'>●</font> Disconnected • Check Server</html>");
+        statusLabel.setForeground(new Color(220, 50, 50));
         leftPanel.add(statusLabel);
 
         footer.add(leftPanel, BorderLayout.WEST);
@@ -354,9 +417,15 @@ public class MYGUI extends JFrame {
         return footer;
     }
 
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            new MYGUI();
-        });
+    public void updateSensorData(double temp, double gas, boolean fire,
+                                 boolean pir, double humidity, double pm25, double pm10) {
+
+        lblTemp.setText("Temp: " + temp);
+        lblGas.setText("Gas: " + gas);
+        lblFire.setText("Fire: " + fire);
+        lblPIR.setText("PIR: " + pir);
+        lblHumidity.setText("Humidity: " + humidity);
+        lblPM25.setText("PM2.5: " + pm25);
+        lblPM10.setText("PM10: " + pm10);
     }
 }
