@@ -9,25 +9,23 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
-import java.util.Random;
 
 public class Main extends JFrame {
 
     // --- 통신 관련 변수 ---
     private Socket socket;
     private PrintWriter out;
-    private final String SERVER_IP = "172.31.38.120";
+    private final String SERVER_IP = "172.31.38.120"; // 서버 IP (테스트: 잘못된 IP로 바꿔보세요)
     private final int SERVER_PORT = 6000;
 
     // --- MYGUI 인스턴스 ---
     private MYGUI gui;
 
-    // 테스트용 모드: true면 mock 데이터 생성 (GUI에서 바로 보임)
-    private final boolean USE_MOCK = true;
-
     public Main() {
+        // 1. MYGUI 창 생성
         gui = new MYGUI();
 
+        // 2. MYGUI에 키보드 리스너 추가
         gui.setFocusable(true);
         gui.addKeyListener(new KeyAdapter() {
             @Override
@@ -36,33 +34,9 @@ public class Main extends JFrame {
             }
         });
 
-        // mock 모드면 mock 시작, 아니면 서버 연결 시도
-        if (USE_MOCK) {
-            startMockDataGenerator();
-        } else {
-            connectToServer();
-        }
-    }
-
-    // --- 공통 JSON 처리 메서드 (재사용) ---
-    private void handleIncomingJson(String inputLine) {
-        try {
-            JSONObject json = new JSONObject(inputLine);
-            if ("SENSOR".equals(json.getString("type"))) {
-                double temp = json.getDouble("temp");
-                double gas = json.getDouble("gas");
-                boolean fire = json.getBoolean("fire");
-                boolean pir = json.getBoolean("pir");
-                double humidity = json.getDouble("humidity");
-                double pm25 = json.getDouble("pm25");
-                double pm10 = json.getDouble("pm10");
-
-                SwingUtilities.invokeLater(() ->
-                        gui.updateSensorData(temp, gas, fire, pir, humidity, pm25, pm10));
-            }
-        } catch (Exception e) {
-            System.out.println("데이터 형식 오류: " + inputLine);
-        }
+        // 창 보이도록 (MYGUI 내부에서 setVisible 해주므로 여기서는 필요없음)
+        // 3. 서버 연결 시작
+        connectToServer();
     }
 
     // --- [기능 1] 서버 연결 및 데이터 수신 (귀) ---
@@ -70,21 +44,57 @@ public class Main extends JFrame {
         new Thread(() -> {
             try {
                 socket = new Socket(SERVER_IP, SERVER_PORT);
-                socket.setTcpNoDelay(true);
+                socket.setTcpNoDelay(true); // 딜레이 제거
                 out = new PrintWriter(socket.getOutputStream(), true);
 
                 System.out.println("✅ 서버 연결 성공!");
-                SwingUtilities.invokeLater(() -> gui.updateConnectionStatus(true));
 
+                // GUI 상태 업데이트 (연결 성공)
+                if (gui != null) {
+                    SwingUtilities.invokeLater(() -> gui.updateConnectionStatus(true));
+                }
+
+                // 서버가 보내주는 데이터 계속 듣기// server ကို clientကို ချိတ်ပေးတဲ့ ဟာ
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                 String inputLine;
                 while ((inputLine = in.readLine()) != null) {
-                    handleIncomingJson(inputLine); // 재사용
+                    // JSON 데이터 파싱
+                    // 예: {"type":"SENSOR", "temp":24.5, "gas":0.1, "fire":false}
+                    try {
+                        JSONObject json = new JSONObject(inputLine);
+
+                        if (json.getString("type").equals("SENSOR")) {// server json string ကို json object
+
+                            double temp = json.getDouble("temp");
+                            double gas = json.getDouble("gas");
+                            boolean fire = json.getBoolean("fire");
+                            boolean pir = json.getBoolean("pir");
+                            double humidity = json.getDouble("humidity");
+                            double pm25 = json.getDouble("pm25");
+                            double pm10 = json.getDouble("pm10");
+
+                            // MYGUI 화면 갱신 (Swing 스레드 안전하게)
+                            SwingUtilities.invokeLater(
+                                    () -> gui.updateSensorData(temp, gas, fire, pir, humidity, pm25, pm10));
+                        }
+
+                        // 필요하면 다른 타입 처리 (예: DUST, PIR 등) 추가 가능
+                        // if ("DUST".equals(json.getString("type"))) { ... gui.updateDust(pm25, pm10);
+                        // }
+
+                    } catch (Exception e) {
+                        System.out.println("데이터 형식 오류: " + inputLine);
+                    }
                 }
 
             } catch (Exception e) {
                 System.out.println("❌ 서버 연결 실패!");
-                SwingUtilities.invokeLater(() -> gui.updateConnectionStatus(false));
+
+                // GUI 상태 업데이트 (연결 실패)//gui update ကို main မှာ လုပ်ဖို့ထားထားတာ
+                if (gui != null) {
+                    SwingUtilities.invokeLater(() -> gui.updateConnectionStatus(false));
+                }
+
                 e.printStackTrace();
             }
         }).start();
@@ -92,63 +102,36 @@ public class Main extends JFrame {
 
     // --- [기능 2] 키보드 명령 전송 (입) ---
     private void sendDriveCommand(int keyCode) {
-        if (out == null) return;
+        if (out == null)
+            return;
 
         String cmd = "";
         switch (keyCode) {
-            case KeyEvent.VK_W: cmd = "FORWARD"; break;
-            case KeyEvent.VK_S: cmd = "BACKWARD"; break;
-            case KeyEvent.VK_A: cmd = "LEFT"; break;
-            case KeyEvent.VK_D: cmd = "RIGHT"; break;
-            case KeyEvent.VK_SPACE: cmd = "STOP"; break;
+            case KeyEvent.VK_W:
+                cmd = "FORWARD";
+                break;
+            case KeyEvent.VK_S:
+                cmd = "BACKWARD";
+                break;
+            case KeyEvent.VK_A:
+                cmd = "LEFT";
+                break;
+            case KeyEvent.VK_D:
+                cmd = "RIGHT";
+                break;
+            case KeyEvent.VK_SPACE:
+                cmd = "STOP";
+                break;
         }
 
         if (!cmd.isEmpty()) {
-            out.println(cmd);
+            out.println(cmd); // 서버로 전송!
             System.out.println("보냄: " + cmd);
         }
     }
 
-    // --- 모의 데이터 생성기 (테스트용) ---
-    private void startMockDataGenerator() {
-        new Thread(() -> {
-            Random rnd = new Random();
-            SwingUtilities.invokeLater(() -> gui.updateConnectionStatus(true)); // 모드상 연결 성공으로 표시
-
-            while (true) {
-                try {
-                    // 랜덤 값 생성 (실제 센서 범위에 맞춰 조절 가능)
-                    double temp = 20.0 + rnd.nextDouble() * 10.0;        // 20 ~ 30
-                    double gas = rnd.nextDouble() * 1.0;                 // 0 ~ 1
-                    boolean fire = rnd.nextInt(100) < 2;                 // 2% 확률
-                    boolean pir = rnd.nextInt(100) < 20;                 // 20% 확률
-                    double humidity = 30.0 + rnd.nextDouble() * 60.0;    // 30 ~ 90
-                    double pm25 = rnd.nextDouble() * 150.0;              // 0 ~ 150
-                    double pm10 = rnd.nextDouble() * 200.0;              // 0 ~ 200
-
-                    // JSON 문자열처럼 만들고 (옵션) 처리함수 호출 — 실제 소켓 문자열과 동일 흐름
-                    JSONObject json = new JSONObject();
-                    json.put("type", "SENSOR");
-                    json.put("temp", temp);
-                    json.put("gas", gas);
-                    json.put("fire", fire);
-                    json.put("pir", pir);
-                    json.put("humidity", humidity);
-                    json.put("pm25", pm25);
-                    json.put("pm10", pm10);
-
-                    // 실제 수신과 동일한 처리 경로 사용
-                    handleIncomingJson(json.toString());
-
-                    Thread.sleep(1000); // 1초마다 업데이트 (원하면 간격 변경)
-                } catch (InterruptedException e) {
-                    break;
-                }
-            }
-        }).start();
-    }
-
     public static void main(String[] args) {
+        // Swing UIကိူEvent Dispatch Threadမှာ ထားတာက ေကာင်းတယ်
         SwingUtilities.invokeLater(() -> new Main());
     }
 }
