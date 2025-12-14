@@ -23,7 +23,7 @@ public class AgentService {
     public static String ask(String prompt) {
 
         JsonObject req = new JsonObject();
-        req.addProperty("model", "llama3.1");
+        req.addProperty("model", "robot-agent");
         req.addProperty("prompt", prompt);
         req.addProperty("stream", false);
 
