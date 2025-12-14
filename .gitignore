@@ -22,3 +22,18 @@ Thumbs.db
 
 yolov8n.pt
 data/
+
+# Java / Gradle build outputs
+**/bin/
+**/build/
+**/*.class
+
+# IntelliJ / Eclipse
+**/.idea/
+**/*.iml
+**/.project
+**/.classpath
+**/.settings/
+
+# macOS
+.DS_Store
