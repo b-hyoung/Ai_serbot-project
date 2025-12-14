@@ -5,7 +5,9 @@ out/
 build/
 .gradle/
 target/
-
+bin/
+target/
+*.class
 # --- Python & ROS ---
 __pycache__/
 *.pyc
@@ -16,3 +18,4 @@ __pycache__/
 # --- OS ---
 .DS_Store
 Thumbs.db
+.env

@@ -1,21 +1,33 @@
 package org.example;
 
-import org.example.service.RobotSocketService;
+import org.example.agent.AgentOrchestrator;
+import org.example.agent.AgentScenarioRunner;
+import org.example.agent.PromptBuilder;
+import org.example.mock.MockScenario;
+import org.example.service.*;
+import org.example.state.SensorState;
 
-//TIP 코드를 <b>실행</b>하려면 <shortcut actionId="Run"/>을(를) 누르거나
-// 에디터 여백에 있는 <icon src="AllIcons.Actions.Execute"/> 아이콘을 클릭하세요.
 public class Main {
-    public static void main(String[] args) throws InterruptedException {
-        RobotSocketService robotSocketService = new RobotSocketService();
-        robotSocketService.startServer();
-        // 로봇이 연결 된 후 보내주기 -> 테스트니까 언제 올지 모름 연결이
-        System.out.println("⏳ 로봇 접속을 기다리는 중...");
-        while (!robotSocketService.isConnected()) {
-            Thread.sleep(2000); // 1초 쉬기
-        }
 
-        // 연결된 후에 전송!
-        System.out.println("✨ 로봇 감지됨! 명령 전송!");
-        // robotSocketService.sendToMessage("FORWARD");
+    public static void main(String[] args) throws Exception {
+         // 로봇 서버 + GUI 서버 생성
+       RobotSocketService robotServer = new RobotSocketService();
+       GUISocketService guiServer = new GUISocketService(robotServer);
+
+       // 서로 연결 (로봇 서버가 GUI 서버로 데이터 보내게)
+       robotServer.setGuiService(guiServer);
+
+       // 서버 시작
+       robotServer.startServer();  // PORT 6000 (로봇)
+       guiServer.startServer();    // PORT 6001 (GUI)
+
+       System.out.println("⏳ 로봇 접속을 기다리는 중...");
+       while (!robotServer.isConnected()) {
+           Thread.sleep(2000);
+       }
+       System.out.println("✨ 로봇 감지됨! 명령 전송 준비 완료");
+
+//          new AgentScenarioRunner().runMockSurvivorScenario();
+
     }
 }
