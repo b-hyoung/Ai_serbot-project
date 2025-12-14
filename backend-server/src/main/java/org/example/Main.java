@@ -9,43 +9,49 @@ public class Main {
 
     public static void main(String[] args) throws Exception {
         // 로봇 서버 + GUI 서버 생성
-       RobotSocketService robotServer = new RobotSocketService();
-       GUISocketService guiServer = new GUISocketService(robotServer);
-
-       // 서로 연결 (로봇 서버가 GUI 서버로 데이터 보내게)
-       robotServer.setGuiService(guiServer);
-
-       // 서버 시작
-       robotServer.startServer();  // PORT 6000 (로봇)
-       guiServer.startServer();    // PORT 6001 (GUI)
-
-       System.out.println("⏳ 로봇 접속을 기다리는 중...");
-       while (!robotServer.isConnected()) {
-           Thread.sleep(2000);
-       }
-       System.out.println("✨ 로봇 감지됨! 명령 전송 준비 완료");
+//       RobotSocketService robotServer = new RobotSocketService();
+//       GUISocketService guiServer = new GUISocketService(robotServer);
 //
-        // SensorState state = new SensorState();
+//       // 서로 연결 (로봇 서버가 GUI 서버로 데이터 보내게)
+//       robotServer.setGuiService(guiServer);
+//
+//       // 서버 시작
+//       robotServer.startServer();  // PORT 6000 (로봇)
+//       guiServer.startServer();    // PORT 6001 (GUI)
+//
+//       System.out.println("⏳ 로봇 접속을 기다리는 중...");
+//       while (!robotServer.isConnected()) {
+//           Thread.sleep(2000);
+//       }
+//       System.out.println("✨ 로봇 감지됨! 명령 전송 준비 완료");
+//
+        SensorState state = new SensorState();
+        for (String line : MockScenario.scenarioSurvivorNearHigh()) {
+            StateUpdater.applyJson(line, state);
+        }
 
-        // System.out.println("=== MOCK SCENARIO: 생존자 + 구조 요청 ===");
-        // for (String line : MockScenario.scenarioSurvivorNear()) {
-        //     StateUpdater.applyJson(line, state);
-        // }
-        // System.out.println("✨ 로봇 감지됨! 명령 전송 준비 완료");
-        // // 연결된 후에 전송!
-        // System.out.println("✨ 로봇 감지됨! 명령 전송!");
-        // // robotSocketService.sendToMessage("FORWARD");
+        boolean hasHumanLikeSpeech = state.lastStt != null && !state.lastStt.isBlank();
 
-        // System.out.println("현재 센서 상태:");
-        // System.out.println(state);
+        // ✅ gas/vision은 현재 없으니 임시값
+        Double gas = null;
+        boolean visionPerson = false;
+        boolean survivorUnconscious = false;
 
-        // String prompt = PromptBuilder.buildRiskPrompt(state);
-        // System.out.println("LLM 프롬프트:");
-        // System.out.println(prompt);
+        // ✅ phase는 지금 상태값이 없으면 일단 SEARCHING/CONFIRMED_CONTACT 중 하나로 지정
+        PromptBuilder.Phase phase = PromptBuilder.Phase.CONFIRMED_CONTACT;
 
-        // String result = AgentService.ask(prompt);
-        // System.out.println("LLM 응답:");
-        // System.out.println(result);
+        String prompt = PromptBuilder.buildSevenKeyFewShotPrompt(
+                phase,
+                state,
+                gas,
+                visionPerson,
+                hasHumanLikeSpeech,
+                survivorUnconscious
+        );
+
+        String result = AgentService.ask(prompt);
+        System.out.println("LLM 응답:");
+        System.out.println(result);
 
     }
 }
