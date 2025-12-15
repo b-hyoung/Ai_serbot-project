@@ -78,7 +78,7 @@ public class PromptBuilder {
                 + "    \"co2\": " + n(s.getCo2()) + ",\n"
                 + "    \"pm25\": " + n(s.getPm25()) + ",\n"
                 + "    \"pm10\": " + n(s.getPm10()) + ",\n"
-                + "    \"pir\": " + b(s.isPir()) + "\n"
+                + "    \"pir\": " + b(s.getPir()) + "\n"
                 + "  },\n"
                 + "  \"audio\": {\n"
                 + "    \"last_stt\": \"" + q(s.lastStt) + "\"\n"
@@ -123,7 +123,7 @@ public class PromptBuilder {
                         "    \"pm25\": " + n(s.getPm25()) + ",\n" +
                         "    \"pm10\": " + n(s.getPm10()) + ",\n" +
                         "    \"gas\": " + (gas == null ? "null" : gas) + ",\n" +
-                        "    \"pir\": " + b(s.isPir()) + ",\n" +
+                        "    \"pir\": " + b(s.getPir()) + ",\n" +
                         "    \"vision_person\": " + (visionPerson ? "true" : "false") + "\n" +
                         "  },\n" +
                         "  \"audio\": {\n" +
@@ -262,7 +262,7 @@ public class PromptBuilder {
                 + "    \"co2\": " + n(s.getCo2()) + ",\n"
                 + "    \"pm25\": " + n(s.getPm25()) + ",\n"
                 + "    \"pm10\": " + n(s.getPm10()) + ",\n"
-                + "    \"pir\": " + b(s.isPir()) + ",\n"
+                + "    \"pir\": " + b(s.getPir()) + ",\n"
                 + "    \"ultrasonic\": " + n(s.ultrasonic) + "\n"
                 + "  },\n"
                 + "  \"audio\": {\n"

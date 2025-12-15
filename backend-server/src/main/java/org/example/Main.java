@@ -1,69 +1,135 @@
 package org.example;
 
-import org.example.service.PromptBuilder;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.example.service.*;
 import org.example.state.SensorState;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
 public class Main {
 
-    public static void main(String[] args) throws Exception {
-        // 로봇 서버 + GUI 서버 생성
+    private static String jstr(JsonObject o, String key) {
+        if (o == null || !o.has(key) || o.get(key).isJsonNull()) return "";
+        try { return o.get(key).getAsString(); } catch (Exception e) { return ""; }
+    }
 
+    public static void main(String[] args) throws Exception {
+
+        // ====== Shared State ======
         SensorState state = new SensorState();
+
+        // ====== Servers ======
         RobotSocketService robotServer = new RobotSocketService();
         GUISocketService guiServer = new GUISocketService(robotServer);
 
-        // 서로 연결 (로봇 서버가 GUI 서버로 데이터 보내게)
         robotServer.setGuiService(guiServer);
+
         VisionClient visionClient = new VisionClient("http://127.0.0.1:8008");
         ImageSocketService imageServer = new ImageSocketService(guiServer, visionClient, state);
 
-        // 서버 시작
-        robotServer.startServer(); // PORT 6000 (로봇)
-        guiServer.startServer(); // PORT 6001 (GUI)
-        imageServer.startServer();
+        // ====== Start Servers ======
+        robotServer.startServer(); // 6000
+        guiServer.startServer();   // 6001 (안 켜도 되지만 서버는 떠도 됨)
+        imageServer.startServer(); // 6002
 
         System.out.println("⏳ 로봇 접속을 기다리는 중...");
         while (!robotServer.isConnected()) {
-            Thread.sleep(2000);
+            Thread.sleep(500);
         }
         System.out.println("✨ 로봇 감지됨! 명령 전송 준비 완료");
 
-        // ✅ 1) state에서 최대한 뽑고 없으면 임시값
-        boolean hasHumanLikeSpeech = state.lastStt != null && !state.lastStt.isBlank();
+        // ====== LLM Trigger Loop (poll state) ======
+        ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
 
-        Double gas = state.getCo2(); // 임시: co2를 gas로 재사용 (없으면 null)
-        boolean visionPerson = false; // 아직 state에 비전 결과 안 넣었으면 false
-        boolean survivorUnconscious = false; // 임시
+        exec.scheduleAtFixedRate(() -> {
+            try {
+                // 최신 state에서 읽기
+                boolean hasHumanLikeSpeech =
+                        state.getLastStt() != null && !state.getLastStt().isBlank();
 
-        // ✅ 2) phase 결정 (임시 규칙)
-        PromptBuilder.Phase phase;
-        if (!visionPerson && !hasHumanLikeSpeech) {
-            phase = PromptBuilder.Phase.SEARCHING;
-        } else if (visionPerson && !hasHumanLikeSpeech) {
-            phase = PromptBuilder.Phase.CONFIRMED_CONTACT;
-        } else {
-            phase = PromptBuilder.Phase.RESCUE_GUIDE;
-        }
+                boolean visionPerson = Boolean.TRUE.equals(state.getVisionPerson());
 
-        // ✅ 3) 7키 프롬프트 생성 (기존 구조 유지)
-        String prompt = PromptBuilder.buildSevenKeyFewShotPrompt(
-                phase,
-                state,
-                gas,
-                visionPerson,
-                hasHumanLikeSpeech,
-                survivorUnconscious);
+                // 사람 감지 안되면 스킵
+                if (!visionPerson) return;
 
-        System.out.println(prompt);
+                // 쿨다운 60초
+                long now = System.currentTimeMillis();
+                if (now - state.getLastLlmCallAtMs() < 60_000) return;
 
-        // ✅ 4) person true일 때만 LLM 호출 (지금은 visionPerson이 false라 호출 안 됨)
-        if (visionPerson) {
-            String result = AgentService.ask(prompt);
-            System.out.println("LLM 응답:");
-            System.out.println(result);
-        } else {
-            System.out.println("LLM 스킵: visionPerson=false");
+                // phase (임시 규칙)
+                PromptBuilder.Phase phase =
+                        hasHumanLikeSpeech ? PromptBuilder.Phase.RESCUE_GUIDE
+                                : PromptBuilder.Phase.CONFIRMED_CONTACT;
+
+                // 임시값들
+                Double gas = state.getCo2();            // 임시로 co2 재사용
+                boolean survivorUnconscious = false;    // 임시
+
+                // 프롬프트 생성 (기존 구조 유지)
+                String prompt = PromptBuilder.buildSevenKeyFewShotPrompt(
+                        phase,
+                        state,
+                        gas,
+                        true,                 // visionPerson
+                        hasHumanLikeSpeech,
+                        survivorUnconscious
+                );
+
+                // 중복 호출 방지 (먼저 찍음)
+                state.setLastLlmCallAtMs(now);
+
+                // LLM 호출
+                String raw = AgentService.ask(prompt);
+                System.out.println("🧠 LLM RAW:\n" + raw);
+
+                // ====== LLM JSON 파싱 ======
+                JsonObject obj;
+                try {
+                    obj = JsonParser.parseString(raw.trim()).getAsJsonObject();
+                } catch (Exception pe) {
+                    System.out.println("🧠 LLM JSON parse failed: " + pe.getMessage());
+                    return;
+                }
+
+                String survivorSpeech = jstr(obj, "survivor_speech");
+                String guiMessage     = jstr(obj, "gui_message");
+
+                // ====== 로봇으로 전송 (6000) ======
+                // 로봇 수신 코드가 JSON(type=TTS)을 처리하도록 해야 실제로 말함.
+                if (!survivorSpeech.isBlank()) {
+                    JsonObject toRobot = new JsonObject();
+                    toRobot.addProperty("type", "TTS");
+                    toRobot.addProperty("text", survivorSpeech);
+                    robotServer.sendToRobot(toRobot.toString());
+                }
+
+                // ====== GUI로 전송 (6001) ======
+                // GUI 안 켰으면 sendToGui가 실패 로그를 찍는 게 정상.
+                if (!guiMessage.isBlank()) {
+                    JsonObject toGui = new JsonObject();
+                    toGui.addProperty("type", "GUI_MESSAGE");
+                    toGui.addProperty("text", guiMessage);
+                    guiServer.sendToGui(toGui.toString());
+                }
+
+                // (원하면 원본도 이벤트로 보낼 수 있음)
+                // JsonObject llmRawEvt = new JsonObject();
+                // llmRawEvt.addProperty("type", "LLM");
+                // llmRawEvt.addProperty("ts", now);
+                // llmRawEvt.add("raw", obj);
+                // guiServer.sendToGui(llmRawEvt.toString());
+
+            } catch (Exception e) {
+                System.out.println("🧠 LLM loop error: " + e.getMessage());
+            }
+        }, 0, 200, TimeUnit.MILLISECONDS);
+
+        // 메인 스레드 종료 방지
+        while (true) {
+            Thread.sleep(10_000);
         }
     }
 }

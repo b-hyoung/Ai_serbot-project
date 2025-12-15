@@ -62,9 +62,18 @@ public class RobotSocketService {
                             String text = json.get("text").getAsString();
                             System.out.println("🗣 STT 명령: " + text);
                         } else if (type.equals("SENSOR")) {
-                            double temp = json.get("temp").getAsDouble();
-                            boolean fire = json.get("fire").getAsBoolean();
-                            System.out.println("🔥 센서: temp=" + temp + ", fire=" + fire);
+                            boolean fire = json.has("fire") && !json.get("fire").isJsonNull() && json.get("fire").getAsBoolean();
+                            Double gas = json.has("gas") && !json.get("gas").isJsonNull() ? json.get("gas").getAsDouble() : null;
+
+                            // dust는 null 가능
+                            Double pm25 = null, pm10 = null;
+                            if (json.has("dust") && json.get("dust").isJsonObject()) {
+                                JsonObject dust = json.getAsJsonObject("dust");
+                                if (dust.has("pm25") && !dust.get("pm25").isJsonNull()) pm25 = dust.get("pm25").getAsDouble();
+                                if (dust.has("pm10") && !dust.get("pm10").isJsonNull()) pm10 = dust.get("pm10").getAsDouble();
+                            }
+
+                            System.out.println("🔥 fire=" + fire + ", gas=" + gas + ", pm25=" + pm25 + ", pm10=" + pm10);
                         }
 
                         // GUI에는 원본 JSON 그대로 전달
