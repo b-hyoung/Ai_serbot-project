@@ -74,11 +74,11 @@ public class PromptBuilder {
                 + "    \"robot_action\": \"" + robotAction + "\"\n"
                 + "  },\n"
                 + "  \"sensors\": {\n"
-                + "    \"flame\": " + n(s.flame) + ",\n"
-                + "    \"co2\": " + n(s.co2) + ",\n"
-                + "    \"pm25\": " + n(s.pm25) + ",\n"
-                + "    \"pm10\": " + n(s.pm10) + ",\n"
-                + "    \"pir\": " + b(s.pir) + "\n"
+                + "    \"flame\": " + n(s.getFlame()) + ",\n"
+                + "    \"co2\": " + n(s.getCo2()) + ",\n"
+                + "    \"pm25\": " + n(s.getPm25()) + ",\n"
+                + "    \"pm10\": " + n(s.getPm10()) + ",\n"
+                + "    \"pir\": " + b(s.isPir()) + "\n"
                 + "  },\n"
                 + "  \"audio\": {\n"
                 + "    \"last_stt\": \"" + q(s.lastStt) + "\"\n"
@@ -119,11 +119,11 @@ public class PromptBuilder {
                         "  \"phase\": \"" + phase + "\",\n" +
                         "  \"sensors\": {\n" +
                         "    \"flame\": " + n(s.flame) + ",\n" +
-                        "    \"co2\": " + n(s.co2) + ",\n" +
-                        "    \"pm25\": " + n(s.pm25) + ",\n" +
-                        "    \"pm10\": " + n(s.pm10) + ",\n" +
+                        "    \"co2\": " + n(s.getCo2()) + ",\n" +
+                        "    \"pm25\": " + n(s.getPm25()) + ",\n" +
+                        "    \"pm10\": " + n(s.getPm10()) + ",\n" +
                         "    \"gas\": " + (gas == null ? "null" : gas) + ",\n" +
-                        "    \"pir\": " + b(s.pir) + ",\n" +
+                        "    \"pir\": " + b(s.isPir()) + ",\n" +
                         "    \"vision_person\": " + (visionPerson ? "true" : "false") + "\n" +
                         "  },\n" +
                         "  \"audio\": {\n" +
@@ -259,10 +259,10 @@ public class PromptBuilder {
                 + "  },\n"
                 + "  \"sensors\": {\n"
                 + "    \"flame\": " + n(s.flame) + ",\n"
-                + "    \"co2\": " + n(s.co2) + ",\n"
-                + "    \"pm25\": " + n(s.pm25) + ",\n"
-                + "    \"pm10\": " + n(s.pm10) + ",\n"
-                + "    \"pir\": " + b(s.pir) + ",\n"
+                + "    \"co2\": " + n(s.getCo2()) + ",\n"
+                + "    \"pm25\": " + n(s.getPm25()) + ",\n"
+                + "    \"pm10\": " + n(s.getPm10()) + ",\n"
+                + "    \"pir\": " + b(s.isPir()) + ",\n"
                 + "    \"ultrasonic\": " + n(s.ultrasonic) + "\n"
                 + "  },\n"
                 + "  \"audio\": {\n"

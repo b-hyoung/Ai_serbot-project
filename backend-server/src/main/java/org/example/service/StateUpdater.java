@@ -32,6 +32,19 @@ public class StateUpdater {
             case "STT" -> {
                 state.setLastStt(obj.get("text").getAsString());
             }
+            case "VISION" -> {
+                // yolo 객체 안에 person/conf가 있다고 가정
+                if (obj.has("yolo") && obj.get("yolo").isJsonObject()) {
+                    JsonObject yolo = obj.getAsJsonObject("yolo");
+
+                    if (yolo.has("person")) state.setVisionPerson(yolo.get("person").getAsBoolean());
+                    if (yolo.has("best") && yolo.get("best").isJsonObject()) {
+                        JsonObject best = yolo.getAsJsonObject("best");
+                        if (best.has("conf")) state.setVisionConf(best.get("conf").getAsDouble());
+                    }
+                    if (obj.has("ts")) state.setVisionTs(obj.get("ts").getAsLong());
+                }
+            }
         }
     }
 }

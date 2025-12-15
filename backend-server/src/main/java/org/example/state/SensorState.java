@@ -9,7 +9,7 @@ public class SensorState {
     public double ultrasonic;
     public String lastStt;
     public long lastSttTime;
-    private double flame;
+    public double flame;
     private double co2;
     private double pm25;
     private double pm10;
@@ -18,6 +18,17 @@ public class SensorState {
     private boolean pir;
     private boolean visionPerson; // YOLO 등으로 사람 감지 여부
 
+    private Double visionConf;
+    private Long visionTs;
+
+    public void setVisionPerson(Boolean v) { this.visionPerson = v; }
+    public Boolean getVisionPerson() { return visionPerson; }
+
+    public void setVisionConf(Double v) { this.visionConf = v; }
+    public Double getVisionConf() { return visionConf; }
+
+    public void setVisionTs(Long v) { this.visionTs = v; }
+    public Long getVisionTs() { return visionTs; }
     // --- getter & setter ---
 
     public double getFlame() {
@@ -72,9 +83,6 @@ public class SensorState {
         return visionPerson;
     }
 
-    public void setVisionPerson(boolean visionPerson) {
-        this.visionPerson = visionPerson;
-    }
 
     public void setLastStt(String text) {
         this.lastStt = text;
@@ -112,4 +120,7 @@ public class SensorState {
 
     }
 
+    public String getLastStt() {
+        return lastStt;
+    }
 }

@@ -32,9 +32,9 @@ public class DecisionEngine {
     }
 
     private static HazardLevel computeHazard(SensorState s) {
-        double flame = s.flame == null ? 0.0 : s.flame;
-        double co2   = s.co2 == null ? 0.0 : s.co2;
-        double pm25  = s.pm25 == null ? 0.0 : s.pm25;
+        double flame = s.flame;
+        double co2   = s.getCo2();
+        double pm25  = s.getPm25();
 
         if (co2 >= 3000 || flame >= 0.8) return HazardLevel.CRITICAL;
         if (co2 >= 2000 || flame >= 0.5 || pm25 >= 150) return HazardLevel.HIGH;
@@ -45,7 +45,7 @@ public class DecisionEngine {
     private static SurvivorEvidence computeEvidence(SensorState s) {
         int score = 0;
 
-        if (Boolean.TRUE.equals(s.pir)) score += 1;
+        if (Boolean.TRUE.equals(s.isPir())) score += 1;
 
         boolean hasStt = s.lastStt != null && !s.lastStt.trim().isEmpty();
         boolean recentStt = hasStt && s.lastSttTime > 0
@@ -75,10 +75,10 @@ public class DecisionEngine {
 
         sb.append("근거: ");
         sb.append("FLAME=").append(val(s.flame)).append(", ");
-        sb.append("CO2=").append(val(s.co2)).append("ppm, ");
-        sb.append("PM2.5=").append(val(s.pm25)).append(", ");
-        sb.append("PM10=").append(val(s.pm10)).append(", ");
-        sb.append("PIR=").append(Boolean.TRUE.equals(s.pir) ? "감지" : "미감지");
+        sb.append("CO2=").append(val(s.getCo2())).append("ppm, ");
+        sb.append("PM2.5=").append(val(s.getPm25())).append(", ");
+        sb.append("PM10=").append(val(s.getPm10())).append(", ");
+        sb.append("PIR=").append(Boolean.TRUE.equals(s.isPir()) ? "감지" : "미감지");
 
         if (s.lastStt != null && !s.lastStt.isBlank()) {
             sb.append(", STT=\"").append(s.lastStt).append("\"");

@@ -1,6 +1,7 @@
 package org.example.service;
 
 import com.google.gson.JsonObject;
+import org.example.state.SensorState;
 
 import java.io.*;
 import java.net.ServerSocket;
@@ -20,10 +21,13 @@ public class ImageSocketService {
     // 튜닝 포인트
     private final double conf = 0.35;           // YOLO confidence threshold
     private final int maxBytes = 5_000_000;     // 5MB safety guard
+    private final SensorState state;
 
-    public ImageSocketService(GUISocketService guiService, VisionClient visionClient) {
+
+    public ImageSocketService(GUISocketService guiService, VisionClient visionClient, SensorState state) {
         this.guiService = guiService;
         this.visionClient = visionClient;
+        this.state = state;
     }
 
     public void startServer() {
@@ -69,7 +73,6 @@ public class ImageSocketService {
 
                     Path saved = saveImage(jpg);
                     String absPath = saved.toAbsolutePath().toString();
-                    System.out.println("📷 saved: " + absPath);
 
                     // 1) YOLO 추론 요청
                     JsonObject yolo;
@@ -94,8 +97,14 @@ public class ImageSocketService {
                     out.addProperty("ts", System.currentTimeMillis());
                     out.add("yolo", yolo);
 
-                    // 3) GUI로 전송
-                    guiService.sendToGui(out.toString());
+                    // ✅ 1) 상태 갱신
+                    StateUpdater.applyJson(out.toString(), state);
+
+                    // ✅ 2) GUI는 “원하면” 이벤트만 (예: person true일 때만)
+                    boolean person = yolo.has("person") && yolo.get("person").getAsBoolean();
+                    if (person) {
+                        guiService.sendToGui(out.toString());
+                    }
                 }
 
             } catch (Exception e) {
