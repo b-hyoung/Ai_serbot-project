@@ -1,37 +1,115 @@
 package org.example.state;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+
 public class SensorState {
-    /* 불꽃 강도(0~1) -> 근처에 불이 존재하는지 */
-    public Double flame = null;
-    /* 질식 위험도(1000~1500 = 정상 , 2000 이상 = 위험 , 3000이상 = 치명적 */
-    public Double co2 = null;
-    /*
-        연기 / 먼지 농도
-        PM2.5 높음 → 생존자 호흡 곤란 위험
-        PM10 높음 → 로봇 시야 저하 / 연기 발생
-    */
-    public Double pm25 = null;
-    public Double pm10 = null;
-    // 열 신호를 통해 사람이 있는지 확인(true/false) */
-    public Boolean pir = null;
-    /* 라이다 역할을 통한 장애물 값 */
-    public Double ultrasonic = null;
 
-    /* STT를 통해 생존자의 의식상태 확인 및 대화 전달 */
-    public String lastStt = null;
-    public long lastSttTime = 0;
+    public double ultrasonic;
+    public String lastStt;
+    public long lastSttTime;
+    private double flame;
+    private double co2;
+    private double pm25;
+    private double pm10;
+    private double gas;
 
-    // 디버깅 시 상태 확인하기 쉽게
+    private boolean pir;
+    private boolean visionPerson; // YOLO 등으로 사람 감지 여부
+
+    // --- getter & setter ---
+
+    public double getFlame() {
+        return flame;
+    }
+
+    public void setFlame(double flame) {
+        this.flame = flame;
+    }
+
+    public double getCo2() {
+        return co2;
+    }
+
+    public void setCo2(double co2) {
+        this.co2 = co2;
+    }
+
+    public double getPm25() {
+        return pm25;
+    }
+
+    public void setPm25(double pm25) {
+        this.pm25 = pm25;
+    }
+
+    public double getPm10() {
+        return pm10;
+    }
+
+    public void setPm10(double pm10) {
+        this.pm10 = pm10;
+    }
+
+    public double getGas() {
+        return gas;
+    }
+
+    public void setGas(double gas) {
+        this.gas = gas;
+    }
+
+    public boolean isPir() {
+        return pir;
+    }
+
+    public void setPir(boolean pir) {
+        this.pir = pir;
+    }
+
+    public boolean isVisionPerson() {
+        return visionPerson;
+    }
+
+    public void setVisionPerson(boolean visionPerson) {
+        this.visionPerson = visionPerson;
+    }
+
+    public void setLastStt(String text) {
+        this.lastStt = text;
+        this.lastSttTime = System.currentTimeMillis(); // 여기서 바로 업데이트 가능
+    }
+    public void setUltrasonic(double distance) {
+        this.ultrasonic = distance;
+    }
+
     @Override
     public String toString() {
+        String sttTimeFormatted;
+
+        if (lastSttTime > 0) {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM월dd일 HH시 mm분 ss초");
+            sttTimeFormatted = Instant.ofEpochMilli(lastSttTime)
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDateTime()
+                    .format(formatter);
+        } else {
+            sttTimeFormatted = "null";
+        }
+
         return "SensorState{" +
                 "flame=" + flame +
                 ", co2=" + co2 +
                 ", pm25=" + pm25 +
                 ", pm10=" + pm10 +
+                ", gas=" + gas +
                 ", pir=" + pir +
                 ", ultrasonic=" + ultrasonic +
                 ", lastStt='" + lastStt + '\'' +
+                ", lastSttTime=" + sttTimeFormatted +
                 '}';
+
     }
+
 }

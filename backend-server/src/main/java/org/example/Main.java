@@ -1,14 +1,16 @@
 package org.example;
 
+import org.example.agent.AgentOrchestrator;
+import org.example.agent.AgentScenarioRunner;
+import org.example.agent.PromptBuilder;
 import org.example.mock.MockScenario;
 import org.example.service.*;
-import org.example.service.GUISocketService;
 import org.example.state.SensorState;
 
 public class Main {
 
     public static void main(String[] args) throws Exception {
-        // 로봇 서버 + GUI 서버 생성
+         // 로봇 서버 + GUI 서버 생성
        RobotSocketService robotServer = new RobotSocketService();
        GUISocketService guiServer = new GUISocketService(robotServer);
 

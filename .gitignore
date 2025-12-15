@@ -19,6 +19,7 @@ ai-server/.venv
 # --- OS ---
 .DS_Store
 Thumbs.db
+.env
 
 yolov8n.pt
 data/
@@ -36,4 +37,5 @@ data/
 **/.settings/
 
 # macOS
+.DS_Store
 .DS_Store

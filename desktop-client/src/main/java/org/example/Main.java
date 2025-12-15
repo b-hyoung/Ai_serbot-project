@@ -1,42 +1,33 @@
 package org.example;
 
-import java.awt.BasicStroke;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.GridLayout;
-import java.awt.RenderingHints;
+import com.studiohartman.jamepad.ControllerManager;
+import com.studiohartman.jamepad.ControllerState;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import javax.imageio.ImageIO;
+import javax.swing.*;
+import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.geom.Point2D;
+import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
-
-import javax.swing.BorderFactory;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
-import javax.swing.Timer;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-import com.studiohartman.jamepad.ControllerManager;
-import com.studiohartman.jamepad.ControllerState;
 
 public class Main extends JFrame {
 
     // --- 통신 관련 변수 ---
     private Socket socket;
     private PrintWriter out;
-    private final String SERVER_IP = "192.168.0.14"; // 내 컴퓨터(서버) 주소
+    private final String SERVER_IP = "192.168.0.22"; // 내 컴퓨터(서버) 주소
     private final int SERVER_PORT = 6001;
 
     // --- 화면 구성 요소 (라벨/패널) ---
@@ -55,12 +46,20 @@ public class Main extends JFrame {
     private boolean lastZoomInPressed = false;   // RB
     private boolean lastZoomOutPressed = false;  // LB
 
+    //카메라
+    private CameraPanel cameraPanel; // 영상 표시용 패널
+
     public Main() {
         // 1. 기본 창 설정
         setTitle("J-SafeGuard 관제 시스템");
         setSize(900, 600); // 맵까지 포함하니 조금 넓게
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
+
+        // 하단: 카메라 영상 패널 추가
+        cameraPanel = new CameraPanel();
+        cameraPanel.setPreferredSize(new Dimension(900, 220)); // 적당한 높이
+        add(cameraPanel, BorderLayout.SOUTH);
 
         // 2. 상단: 상태 표시줄
         lblStatus = new JLabel("상태: 서버 연결 대기중...");
@@ -104,7 +103,47 @@ public class Main extends JFrame {
 
         setVisible(true);
     }
+    // 카메라 영상 표시용 패널
+    private static class CameraPanel extends JPanel {
+        private BufferedImage image;
 
+        public CameraPanel() {
+            setBackground(Color.BLACK);
+            setBorder(BorderFactory.createTitledBorder("Camera"));
+        }
+
+        public void setImage(BufferedImage img) {
+            this.image = img;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(java.awt.Graphics g) {
+            super.paintComponent(g);
+            if (image == null) {
+                g.setColor(Color.GRAY);
+                g.drawString("영상 데이터 대기중...", 10, 20);
+                return;
+            }
+
+            int panelW = getWidth();
+            int panelH = getHeight();
+            int imgW = image.getWidth();
+            int imgH = image.getHeight();
+
+            double scale = Math.min(
+                    (double) panelW / imgW,
+                    (double) panelH / imgH
+            );
+
+            int drawW = (int) (imgW * scale);
+            int drawH = (int) (imgH * scale);
+            int x = (panelW - drawW) / 2;
+            int y = (panelH - drawH) / 2;
+
+            g.drawImage(image, x, y, drawW, drawH, null);
+        }
+    }
     // 예쁜 라벨 만드는 함수
     private JLabel createSensorLabel(String title, String initValue) {
         JLabel label = new JLabel("<html><center>" + title + "<br><h1>" + initValue + "</h1></center></html>");
@@ -147,6 +186,9 @@ public class Main extends JFrame {
                         } else if ("LIDAR".equalsIgnoreCase(type)) {
                             // LiDAR SLAM 데이터 처리
                             handleLidarJson(json);
+                        } else if ("IMAGE".equalsIgnoreCase(type)) {
+                            // 카메라 이미지 프레임 처리
+                            handleImageJson(json);
                         }
 
                     } catch (Exception e) {
@@ -162,6 +204,31 @@ public class Main extends JFrame {
             }
         }).start();
     }
+
+    // IMAGE 타입 처리: base64 → BufferedImage → cameraPanel 갱신
+    private void handleImageJson(JSONObject json) {
+        if (cameraPanel == null) return;
+
+        String base64 = json.optString("data", null);
+        if (base64 == null || base64.isEmpty()) {
+            return;
+        }
+
+        try {
+            byte[] bytes = Base64.getDecoder().decode(base64);
+            BufferedImage img = ImageIO.read(new ByteArrayInputStream(bytes));
+            if (img == null) {
+                System.out.println("이미지 디코딩 실패");
+                return;
+            }
+
+            SwingUtilities.invokeLater(() -> cameraPanel.setImage(img));
+
+        } catch (Exception ex) {
+            System.out.println("IMAGE 디코딩 오류: " + ex.getMessage());
+        }
+    }
+
     // --- MOCK: PAD 목데이터 시나리오 재생 ---
     private void playMockPadScenario(List<String> lines, int delayMs) {
         if (out == null) {
@@ -630,6 +697,7 @@ public class Main extends JFrame {
     }
 
     public static void main(String[] args) {
-        new Main();
+        //new Main();
+        MainFx.main(args);
     }
 }
