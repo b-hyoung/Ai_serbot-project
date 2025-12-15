@@ -28,7 +28,7 @@ public class Main {
         robotServer.setGuiService(guiServer);
 
         VisionClient visionClient = new VisionClient("http://127.0.0.1:8008");
-        ImageSocketService imageServer = new ImageSocketService(guiServer, visionClient, state);
+        ImageSocketService imageServer = new ImageSocketService(guiServer, visionClient, state, robotServer);
 
         // ====== Start Servers ======
         robotServer.startServer(); // 6000
