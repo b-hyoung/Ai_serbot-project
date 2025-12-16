@@ -17,6 +17,7 @@ public class VisionClient {
     public VisionClient(String baseUrl) {
         this.baseUrl = baseUrl;
     }
+    
 
     public JsonObject infer(String absoluteImagePath, double conf) throws Exception {
         JsonObject req = new JsonObject();
@@ -39,4 +40,7 @@ public class VisionClient {
             return JsonParser.parseString(respBody).getAsJsonObject();
         }
     }
+
+    
+
 }

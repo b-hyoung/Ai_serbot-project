@@ -1,8 +1,7 @@
-package org.example.service;
+package org.example.state;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import org.example.state.SensorState;
 
 public class StateUpdater {
 

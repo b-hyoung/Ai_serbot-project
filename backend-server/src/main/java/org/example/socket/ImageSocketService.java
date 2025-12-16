@@ -1,8 +1,10 @@
-package org.example.service;
+package org.example.socket;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import org.example.service.*;
 import org.example.state.SensorState;
+import org.example.state.StateUpdater;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;

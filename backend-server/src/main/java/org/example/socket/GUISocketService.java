@@ -1,4 +1,4 @@
-package org.example.service;
+package org.example.socket;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -70,7 +70,6 @@ public class GUISocketService {
                         } else if ("KEY".equals(type)) {
                             String cmd = json.get("cmd").getAsString();
                             System.out.println("⌨ GUI KEY 명령: " + cmd);
-
                             // 이 역시 로봇으로 그대로 전달할 수도 있고,
                             // 서버에서 변환해서 보낼 수도 있음
                             robotService.sendToRobot(line);

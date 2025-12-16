@@ -7,73 +7,142 @@ import java.time.format.DateTimeFormatter;
 public class SensorState {
 
     // ===== sensors (nullable 권장: 미수신/null 구분) =====
-    public Double ultrasonic;     // cm 등
-    public String lastStt;
-    public long lastSttTime;
+    private Double ultrasonic;     // cm
+    private String lastStt;
+    private long lastSttTime;
 
-    public Double flame;          // 0~1 or raw
-    private Double co2;           // ppm
+    private Double flame;          // 0~1 or raw
+    private Double co2;            // ppm (gas 제거, co2로 단일화)
     private Double pm25;
     private Double pm10;
-    private Double gas;           // 너가 따로 쓰면 유지, 아니면 co2로 매핑 가능
 
-    private Boolean pir;          // PIR true/false/null
-    private Boolean visionPerson; // YOLO person true/false/null
+    private Boolean pir;           // PIR true/false/null
+    private Boolean visionPerson;  // YOLO person true/false/null
 
     private Double visionConf;
     private Long visionTs;
 
-    // ===== llm =====
-    private long lastLlmCallAtMs = 0;
-    private String lastLlmRaw;    // 디버그/리플레이용 (원하면)
+    // ===== timestamps (stale 판단용) =====
+    private long lastSensorUpdateAtMs = 0;
+    private Long flameTs;
+    private Long co2Ts;
+    private Long dustTs;
+    private Long pirTs;
+    private Long ultrasonicTs;
 
-    // ===== llm getters/setters =====
-    public long getLastLlmCallAtMs() { return lastLlmCallAtMs; }
-    public void setLastLlmCallAtMs(long t) { this.lastLlmCallAtMs = t; }
+    // ===== dust meta (시연/운영 공용) =====
+    // "ROBOT" | "DEMO" | "CACHE" | null
+    private String dustSource;
 
-    public String getLastLlmRaw() { return lastLlmRaw; }
-    public void setLastLlmRaw(String raw) { this.lastLlmRaw = raw; }
+    // ---------- 공통 유틸 ----------
+    private void markAnySensorUpdate() {
+        this.lastSensorUpdateAtMs = System.currentTimeMillis();
+    }
+
+    public long getLastSensorUpdateAtMs() {
+        return lastSensorUpdateAtMs;
+    }
 
     // ===== vision =====
-    public void setVisionPerson(Boolean v) { this.visionPerson = v; }
+    public void setVisionPerson(Boolean v) {
+        this.visionPerson = v;
+        this.visionTs = System.currentTimeMillis();
+        markAnySensorUpdate();
+    }
     public Boolean getVisionPerson() { return visionPerson; }
 
-    public void setVisionConf(Double v) { this.visionConf = v; }
+    public void setVisionConf(Double v) {
+        this.visionConf = v;
+        this.visionTs = System.currentTimeMillis();
+        markAnySensorUpdate();
+    }
     public Double getVisionConf() { return visionConf; }
 
-    public void setVisionTs(Long v) { this.visionTs = v; }
     public Long getVisionTs() { return visionTs; }
 
-    // ===== sensors getters/setters =====
+    public boolean isVisionPerson() {
+        return Boolean.TRUE.equals(this.visionPerson);
+    }
+
+    // ===== flame =====
     public Double getFlame() { return flame; }
-    public void setFlame(Double flame) { this.flame = flame; }
+    public void setFlame(Double flame) {
+        this.flame = flame;
+        this.flameTs = System.currentTimeMillis();
+        markAnySensorUpdate();
+    }
+    public Long getFlameTs() { return flameTs; }
 
+    // ===== CO2 (gas 통합) =====
     public Double getCo2() { return co2; }
-    public void setCo2(Double co2) { this.co2 = co2; }
+    public void setCo2(Double co2) {
+        this.co2 = co2;
+        this.co2Ts = System.currentTimeMillis();
+        markAnySensorUpdate();
+    }
+    public Long getCo2Ts() { return co2Ts; }
 
+    // ===== dust =====
     public Double getPm25() { return pm25; }
-    public void setPm25(Double pm25) { this.pm25 = pm25; }
-
     public Double getPm10() { return pm10; }
-    public void setPm10(Double pm10) { this.pm10 = pm10; }
+    public Long getDustTs() { return dustTs; }
 
-    public Double getGas() { return gas; }
-    public void setGas(Double gas) { this.gas = gas; }
+    /**
+     * dust는 한 패킷 단위로 들어오기 때문에 묶어서 세팅
+     * @param pm25 pm2.5
+     * @param pm10 pm10
+     * @param source "ROBOT" | "DEMO" | "CACHE"
+     */
+    public void setDust(Double pm25, Double pm10, String source) {
+        this.pm25 = pm25;
+        this.pm10 = pm10;
+        this.dustSource = source;
+        this.dustTs = System.currentTimeMillis();
+        markAnySensorUpdate();
+    }
 
+    public String getDustSource() { return dustSource; }
+
+    // ===== PIR =====
     public Boolean getPir() { return pir; }
-    public void setPir(Boolean pir) { this.pir = pir; }
+    public void setPir(Boolean pir) {
+        this.pir = pir;
+        this.pirTs = System.currentTimeMillis();
+        markAnySensorUpdate();
+    }
+    public Long getPirTs() { return pirTs; }
 
+    // ===== ultrasonic =====
+    public Double getUltrasonic() { return ultrasonic; }
+    public void setUltrasonic(Double distance) {
+        this.ultrasonic = distance;
+        this.ultrasonicTs = System.currentTimeMillis();
+        markAnySensorUpdate();
+    }
+    public Long getUltrasonicTs() { return ultrasonicTs; }
+
+    // ===== STT =====
     public String getLastStt() { return lastStt; }
+    public long getLastSttTime() { return lastSttTime; }
 
     public void setLastStt(String text) {
         this.lastStt = text;
         this.lastSttTime = System.currentTimeMillis();
+        markAnySensorUpdate();
     }
 
-    public void setUltrasonic(Double distance) { this.ultrasonic = distance; }
+    // ===== 호환성 유지용 (기존 코드 보호) =====
+    public void setPm25(Double pm25) {
+        setDust(pm25, this.pm10, this.dustSource == null ? "ROBOT" : this.dustSource);
+    }
+    public void setPm10(Double pm10) {
+        setDust(this.pm25, pm10, this.dustSource == null ? "ROBOT" : this.dustSource);
+    }
 
-    public boolean isVisionPerson() {
-        return Boolean.TRUE.equals(this.visionPerson);
+    // ===== stale 판단 =====
+    public boolean isDustStale(long staleMs) {
+        if (dustTs == null) return true;
+        return (System.currentTimeMillis() - dustTs) > staleMs;
     }
 
     @Override
@@ -94,14 +163,16 @@ public class SensorState {
                 ", co2=" + co2 +
                 ", pm25=" + pm25 +
                 ", pm10=" + pm10 +
-                ", gas=" + gas +
                 ", pir=" + pir +
                 ", ultrasonic=" + ultrasonic +
                 ", visionPerson=" + visionPerson +
                 ", visionConf=" + visionConf +
                 ", visionTs=" + visionTs +
+                ", dustSource=" + dustSource +
+                ", dustTs=" + dustTs +
                 ", lastStt='" + lastStt + '\'' +
                 ", lastSttTime=" + sttTimeFormatted +
+                ", lastSensorUpdateAtMs=" + lastSensorUpdateAtMs +
                 '}';
     }
 }

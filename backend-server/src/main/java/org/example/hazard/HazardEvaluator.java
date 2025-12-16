@@ -1,4 +1,4 @@
-package org.example.service;
+package org.example.hazard;
 
 import org.example.state.SensorState;
 import org.example.service.PromptBuilder.HazardLevel;
