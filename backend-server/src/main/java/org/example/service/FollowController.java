@@ -42,6 +42,10 @@ public class FollowController {
     public String decide(JsonObject yolo) {
         if (yolo == null) return "STOP";
 
+        if (yolo.has("w") && yolo.has("h")) {
+            updateFrameSize(yolo.get("w").getAsInt(), yolo.get("h").getAsInt());
+        }
+
         // person false면 STOP
         if (!yolo.has("person") || !yolo.get("person").getAsBoolean()) return "STOP";
         if (!yolo.has("best") || !yolo.get("best").isJsonObject()) return "STOP";

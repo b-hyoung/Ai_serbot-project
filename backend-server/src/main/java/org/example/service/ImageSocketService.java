@@ -1,5 +1,6 @@
 package org.example.service;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.example.state.SensorState;
 
@@ -20,6 +21,10 @@ public class ImageSocketService {
     private final RobotSocketService robotServer;
     private final FollowController followController;
 
+    // ✅ person 감지 직후 워밍업(급회전 방지)
+    private volatile long personBecameTrueAtMs = 0;
+    private final long followWarmupMs = 800; // 0.8초
+
     private final GUISocketService guiService;
     private final VisionClient visionClient;
     private final SensorState state;
@@ -31,6 +36,9 @@ public class ImageSocketService {
     // LLM 호출 제어
     private volatile long lastLlmCallAtMs = 0;
     private final long llmCooldownMs = 2000;
+
+    // ✅ FOLLOW: person이 끊기면 STOP 너무 자주 보내지 말기(로봇 떨림 방지)
+    private volatile boolean lastPerson = false;
 
     public ImageSocketService(
             GUISocketService guiService,
@@ -56,7 +64,6 @@ public class ImageSocketService {
                 while (true) {
                     Socket sock = server.accept();
                     sock.setTcpNoDelay(true);
-                    System.out.println("📷 이미지 접속: " + sock.getInetAddress());
                     handleClient(sock);
                 }
             } catch (Exception e) {
@@ -73,7 +80,7 @@ public class ImageSocketService {
                 while (true) {
                     int len;
                     try {
-                        len = in.readInt();
+                        len = in.readInt(); // 로봇이 Big-endian 4바이트 길이 전송
                     } catch (EOFException eof) {
                         break;
                     }
@@ -93,13 +100,14 @@ public class ImageSocketService {
                     Path saved = saveImage(jpg);
                     String absPath = saved.toAbsolutePath().toString();
 
-                    // ✅ (중요) 실제 이미지 크기 반영 (RIGHT 고정 문제 원인 가능성 큼)
+                    // ✅ 실제 이미지 크기 반영 (좌표계 불일치 방지)
+                    int frameW = 640, frameH = 480;
                     try {
                         BufferedImage img = ImageIO.read(saved.toFile());
                         if (img != null) {
-                            followController.updateFrameSize(img.getWidth(), img.getHeight());
-                            // 원하면 로그
-                            // System.out.println("📐 saved image size = " + img.getWidth() + "x" + img.getHeight());
+                            frameW = img.getWidth();
+                            frameH = img.getHeight();
+                            followController.updateFrameSize(frameW, frameH);
                         }
                     } catch (Exception e) {
                         System.out.println("⚠️ ImageIO read failed: " + e.getMessage());
@@ -122,6 +130,9 @@ public class ImageSocketService {
                         continue;
                     }
 
+                    // ✅ (핵심) 여러 사람일 때 best가 오른쪽으로 고정되는 현상 방지
+                    yolo = rewriteBestToCenterMost(yolo, frameW);
+
                     // 2) VISION 이벤트
                     JsonObject visionEvt = new JsonObject();
                     visionEvt.addProperty("type", "VISION");
@@ -134,18 +145,39 @@ public class ImageSocketService {
 
                     boolean person = yolo.has("person") && yolo.get("person").getAsBoolean();
 
-                    // 3.5) FOLLOW 명령
+                    // ✅ person false -> true 순간을 잡아서 워밍업 타이머 시작
+                    if (person && !lastPerson) {
+                        personBecameTrueAtMs = System.currentTimeMillis();
+                    }
+
+                    // 3.5) FOLLOW 명령 (JSON CMD로 통일)
                     if (robotServer != null) {
+
                         if (person) {
-                            String cmd = followController.decideThrottled(yolo);
-                            if (cmd != null) {
-                                robotServer.sendToRobot(cmd + "\n"); // ✅ 서버 구현이 라인 기반이면 개행 필요
-                                System.out.println("🤖 FOLLOW CMD -> " + cmd);
+                            long now = System.currentTimeMillis();
+
+                            // ✅ 워밍업 시간 동안은 STOP 고정(첫 프레임 튐 방지)
+                            if (now - personBecameTrueAtMs < followWarmupMs) {
+                                sendRobotCmdJson("STOP");
+                                System.out.println("🤖 FOLLOW WARMUP -> STOP (" + (now - personBecameTrueAtMs) + "ms)");
+                            } else {
+                                String cmd = followController.decideThrottled(yolo);
+                                if (cmd != null) {
+                                    sendRobotCmdJson(cmd);
+                                    System.out.println("🤖 FOLLOW CMD -> " + cmd);
+                                }
                             }
+
                         } else {
-                            robotServer.sendToRobot("STOP\n");
+                            // person이 true -> false로 바뀌는 순간에만 STOP 한 번
+                            if (lastPerson) {
+                                sendRobotCmdJson("STOP");
+                                System.out.println("🤖 FOLLOW CMD -> STOP(person_lost)");
+                            }
                         }
                     }
+
+                    lastPerson = person;
 
                     // 4) person=true → LLM 호출
                     if (person) {
@@ -172,7 +204,7 @@ public class ImageSocketService {
                                 String prompt = PromptBuilder.buildSevenKeyFewShotPrompt(
                                         phase,
                                         state,
-                                        state.getCo2(),      // gas 임시 대입 (원하면 state.getGas로 바꿔)
+                                        state.getCo2(),      // gas 임시 대입
                                         visionPerson,
                                         hasHumanLikeSpeech,
                                         false
@@ -213,6 +245,63 @@ public class ImageSocketService {
                 try { sock.close(); } catch (Exception ignored) {}
             }
         }, "ImageClientHandler").start();
+    }
+
+    /** ✅ 로봇에 JSON CMD로 보냄 (로봇 파이썬 수신 로직과 일치) */
+    private void sendRobotCmdJson(String cmd) {
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "CMD");
+        o.addProperty("cmd", cmd);
+        robotServer.sendToRobot(o.toString() + "\n");
+    }
+
+    /**
+     * ✅ yolo.best를 "화면 중심에 가장 가까운 사람"으로 재선정한다.
+     * 전제: Vision 서버가 후보 배열(all/boxes/dets 등)을 같이 보내는 경우에만 효과 있음.
+     * 후보 배열이 없으면 원본 유지.
+     */
+    private JsonObject rewriteBestToCenterMost(JsonObject yolo, int frameW) {
+        if (yolo == null) return yolo;
+        if (!yolo.has("person") || !yolo.get("person").getAsBoolean()) return yolo;
+
+        JsonArray candidates = null;
+        if (yolo.has("all") && yolo.get("all").isJsonArray()) candidates = yolo.getAsJsonArray("all");
+        else if (yolo.has("boxes") && yolo.get("boxes").isJsonArray()) candidates = yolo.getAsJsonArray("boxes");
+        else if (yolo.has("dets") && yolo.get("dets").isJsonArray()) candidates = yolo.getAsJsonArray("dets");
+
+        if (candidates == null || candidates.size() == 0) {
+            return yolo;
+        }
+
+        double bestDist = Double.MAX_VALUE;
+        JsonObject picked = null;
+
+        for (int i = 0; i < candidates.size(); i++) {
+            if (!candidates.get(i).isJsonObject()) continue;
+            JsonObject det = candidates.get(i).getAsJsonObject();
+
+            if (!det.has("xyxy") || !det.get("xyxy").isJsonArray()) continue;
+            JsonArray xy = det.getAsJsonArray("xyxy");
+            if (xy.size() < 4) continue;
+
+            double x1 = xy.get(0).getAsDouble();
+            double x2 = xy.get(2).getAsDouble();
+            if (x2 <= x1) continue;
+
+            double cx = (x1 + x2) / 2.0;
+            double dist = Math.abs(cx - (frameW / 2.0));
+
+            if (dist < bestDist) {
+                bestDist = dist;
+                picked = det;
+            }
+        }
+
+        if (picked != null) {
+            yolo.add("best", picked);
+        }
+
+        return yolo;
     }
 
     private Path saveImage(byte[] jpg) throws IOException {

@@ -18,15 +18,16 @@ public class Main {
 
     public static void main(String[] args) throws Exception {
 
-        // ====== Shared State ======
+        // ====== 센서 상태 ======
         SensorState state = new SensorState();
 
-        // ====== Servers ======
+        // ====== 로봇 및 GUI 서버 ======
         RobotSocketService robotServer = new RobotSocketService();
         GUISocketService guiServer = new GUISocketService(robotServer);
 
         robotServer.setGuiService(guiServer);
 
+        // ======= 이미지 모델 서버 =======
         VisionClient visionClient = new VisionClient("http://127.0.0.1:8008");
         ImageSocketService imageServer = new ImageSocketService(guiServer, visionClient, state, robotServer);
 
