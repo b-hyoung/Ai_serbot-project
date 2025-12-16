@@ -6,7 +6,7 @@ import org.example.service.PromptBuilder.HazardLevel;
 public class HazardEvaluator {
 
     public static HazardLevel compute(SensorState s) {
-        double flame = safe(s.flame);
+        double flame = safe(s.getFlame());
         double co2   = safe(s.getCo2());
         double pm25  = safe(s.getPm25());
         double pm10  = safe(s.getPm10());

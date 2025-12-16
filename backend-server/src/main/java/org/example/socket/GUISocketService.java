@@ -20,6 +20,11 @@ public class GUISocketService {
         this.robotService = robotService;
     }
 
+    public boolean isConnected() {
+        Socket s = this.guiSocket;
+        return s != null && !s.isClosed();
+    }
+
     public void startServer() {
         new Thread(() -> {
             try {

@@ -31,7 +31,7 @@ public class Main {
         AtomicLong lastLlmCallAtMs = new AtomicLong(0);
 
         // ====== 로봇 및 GUI 서버 ======
-        RobotSocketService robotServer = new RobotSocketService();
+        RobotSocketService robotServer = new RobotSocketService(state);
         GUISocketService guiServer = new GUISocketService(robotServer);
 
         robotServer.setGuiService(guiServer);

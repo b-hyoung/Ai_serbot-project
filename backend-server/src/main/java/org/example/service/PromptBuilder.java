@@ -26,6 +26,8 @@ public class PromptBuilder {
         if (nowMs - lastLlmCallAtMs < cooldownMs) return false;
         return evidence == SurvivorEvidence.CONFIRMED;
     }
+    /*
+    * */
 
     /* =========================================================
        1) (권장) 2키 메시지 생성 프롬프트: voice + gui 둘 다 생성
@@ -81,7 +83,7 @@ public class PromptBuilder {
                 + "    \"pir\": " + b(s.getPir()) + "\n"
                 + "  },\n"
                 + "  \"audio\": {\n"
-                + "    \"last_stt\": \"" + q(s.lastStt) + "\"\n"
+                + "    \"last_stt\": \"" + q(s.getLastStt()) + "\"\n"
                 + "  },\n"
                 + "  \"gui_message_fixed\": \"" + q(guiMessageFixed) + "\"\n"
                 + "}";
@@ -118,7 +120,7 @@ public class PromptBuilder {
                 "{\n" +
                         "  \"phase\": \"" + phase + "\",\n" +
                         "  \"sensors\": {\n" +
-                        "    \"flame\": " + n(s.flame) + ",\n" +
+                        "    \"flame\": " + n(s.getFlame()) + ",\n" +
                         "    \"co2\": " + n(s.getCo2()) + ",\n" +
                         "    \"pm25\": " + n(s.getPm25()) + ",\n" +
                         "    \"pm10\": " + n(s.getPm10()) + ",\n" +
@@ -127,7 +129,7 @@ public class PromptBuilder {
                         "    \"vision_person\": " + (visionPerson ? "true" : "false") + "\n" +
                         "  },\n" +
                         "  \"audio\": {\n" +
-                        "    \"recent_stt\": \"" + q(s.lastStt) + "\",\n" +
+                        "    \"recent_stt\": \"" + q(s.getLastStt()) + "\",\n" +
                         "    \"has_human_like_speech\": " + (hasHumanLikeSpeech ? "true" : "false") + "\n" +
                         "  },\n" +
                         "  \"survivor\": {\n" +
@@ -258,16 +260,16 @@ public class PromptBuilder {
                 + "    \"robot_action\": \"" + robotAction + "\"\n"
                 + "  },\n"
                 + "  \"sensors\": {\n"
-                + "    \"flame\": " + n(s.flame) + ",\n"
+                + "    \"flame\": " + n(s.getFlame()) + ",\n"
                 + "    \"co2\": " + n(s.getCo2()) + ",\n"
                 + "    \"pm25\": " + n(s.getPm25()) + ",\n"
                 + "    \"pm10\": " + n(s.getPm10()) + ",\n"
                 + "    \"pir\": " + b(s.getPir()) + ",\n"
-                + "    \"ultrasonic\": " + n(s.ultrasonic) + "\n"
+                + "    \"ultrasonic\": " + n(s.getUltrasonic()) + "\n"
                 + "  },\n"
                 + "  \"audio\": {\n"
-                + "    \"last_stt\": \"" + q(s.lastStt) + "\",\n"
-                + "    \"last_stt_time\": " + s.lastSttTime + "\n"
+                + "    \"last_stt\": \"" + q(s.getLastStt()) + "\",\n"
+                + "    \"last_stt_time\": " + s.getLastSttTime() + "\n"
                 + "  }\n"
                 + "}";
     }

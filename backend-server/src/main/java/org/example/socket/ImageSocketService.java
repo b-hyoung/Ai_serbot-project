@@ -23,15 +23,13 @@ public class ImageSocketService {
     private final RobotSocketService robotServer;
     private final FollowController followController;
 
-    // ✅ person 감지 직후 워밍업(급회전 방지)
     private volatile long personBecameTrueAtMs = 0;
-    private final long followWarmupMs = 800; // 0.8초
+    private final long followWarmupMs = 800;
 
     private final GUISocketService guiService;
     private final VisionClient visionClient;
     private final SensorState state;
 
-    // 튜닝 포인트
     private final double conf = 0.35;
     private final int maxBytes = 5_000_000;
 
@@ -39,7 +37,6 @@ public class ImageSocketService {
     private volatile long lastLlmCallAtMs = 0;
     private final long llmCooldownMs = 2000;
 
-    // ✅ FOLLOW: person이 끊기면 STOP 너무 자주 보내지 말기(로봇 떨림 방지)
     private volatile boolean lastPerson = false;
 
     public ImageSocketService(
@@ -52,8 +49,6 @@ public class ImageSocketService {
         this.visionClient = visionClient;
         this.state = state;
         this.robotServer = robotServer;
-
-        // 초기값은 대충, 실제 크기는 이미지 읽어서 updateFrameSize로 갱신
         this.followController = new FollowController(640, 480);
     }
 
@@ -82,7 +77,7 @@ public class ImageSocketService {
                 while (true) {
                     int len;
                     try {
-                        len = in.readInt(); // 로봇이 Big-endian 4바이트 길이 전송
+                        len = in.readInt();
                     } catch (EOFException eof) {
                         break;
                     }
@@ -102,7 +97,7 @@ public class ImageSocketService {
                     Path saved = saveImage(jpg);
                     String absPath = saved.toAbsolutePath().toString();
 
-                    // ✅ 실제 이미지 크기 반영 (좌표계 불일치 방지)
+                    // 실제 이미지 크기 반영
                     int frameW = 640, frameH = 480;
                     try {
                         BufferedImage img = ImageIO.read(saved.toFile());
@@ -132,7 +127,7 @@ public class ImageSocketService {
                         continue;
                     }
 
-                    // ✅ (핵심) 여러 사람일 때 best가 오른쪽으로 고정되는 현상 방지
+                    // best 재선정(가능할 때만)
                     yolo = rewriteBestToCenterMost(yolo, frameW);
 
                     // 2) VISION 이벤트
@@ -147,33 +142,29 @@ public class ImageSocketService {
 
                     boolean person = yolo.has("person") && yolo.get("person").getAsBoolean();
 
-                    // ✅ person false -> true 순간을 잡아서 워밍업 타이머 시작
+                    // person false -> true 순간 워밍업 타이머
                     if (person && !lastPerson) {
                         personBecameTrueAtMs = System.currentTimeMillis();
                     }
 
-                    // 3.5) FOLLOW 명령 (JSON CMD로 통일)
+                    // 3.5) FOLLOW 명령: CMD로 통일
                     if (robotServer != null) {
-
                         if (person) {
                             long now = System.currentTimeMillis();
 
-                            // ✅ 워밍업 시간 동안은 STOP 고정(첫 프레임 튐 방지)
                             if (now - personBecameTrueAtMs < followWarmupMs) {
-                                sendRobotCmdJson("STOP");
+                                sendRobotCmd("STOP");
                                 System.out.println("🤖 FOLLOW WARMUP -> STOP (" + (now - personBecameTrueAtMs) + "ms)");
                             } else {
                                 String cmd = followController.decideThrottled(yolo);
                                 if (cmd != null) {
-                                    sendRobotCmdJson(cmd);
+                                    sendRobotCmd(cmd);
                                     System.out.println("🤖 FOLLOW CMD -> " + cmd);
                                 }
                             }
-
                         } else {
-                            // person이 true -> false로 바뀌는 순간에만 STOP 한 번
                             if (lastPerson) {
-                                sendRobotCmdJson("STOP");
+                                sendRobotCmd("STOP");
                                 System.out.println("🤖 FOLLOW CMD -> STOP(person_lost)");
                             }
                         }
@@ -206,7 +197,7 @@ public class ImageSocketService {
                                 String prompt = PromptBuilder.buildSevenKeyFewShotPrompt(
                                         phase,
                                         state,
-                                        state.getCo2(),      // gas 임시 대입
+                                        state.getCo2(),      // ✅ co2(ppm)
                                         visionPerson,
                                         hasHumanLikeSpeech,
                                         false
@@ -235,8 +226,8 @@ public class ImageSocketService {
                         }
                     }
 
-                    // 5) GUI로 VISION 이벤트 전송
-                    if (person && guiService != null) {
+                    // ✅ 5) GUI로 VISION 이벤트는 "항상" 전송 (person false도 포함)
+                    if (guiService != null) {
                         guiService.sendToGui(visionEvt.toString());
                     }
                 }
@@ -249,19 +240,15 @@ public class ImageSocketService {
         }, "ImageClientHandler").start();
     }
 
-    /** ✅ 로봇에 JSON CMD로 보냄 (로봇 파이썬 수신 로직과 일치) */
-    private void sendRobotCmdJson(String cmd) {
+    /** ✅ 로봇에 이동 명령은 CMD로 통일 */
+    private void sendRobotCmd(String cmd) {
         JsonObject o = new JsonObject();
         o.addProperty("type", "CMD");
         o.addProperty("cmd", cmd);
-        robotServer.sendToRobot(o.toString() + "\n");
+        // ✅ 여기서 \n 붙이지 말 것: RobotSocketService가 println이면 중복 개행 됨
+        robotServer.sendToRobot(o.toString());
     }
 
-    /**
-     * ✅ yolo.best를 "화면 중심에 가장 가까운 사람"으로 재선정한다.
-     * 전제: Vision 서버가 후보 배열(all/boxes/dets 등)을 같이 보내는 경우에만 효과 있음.
-     * 후보 배열이 없으면 원본 유지.
-     */
     private JsonObject rewriteBestToCenterMost(JsonObject yolo, int frameW) {
         if (yolo == null) return yolo;
         if (!yolo.has("person") || !yolo.get("person").getAsBoolean()) return yolo;
@@ -271,9 +258,7 @@ public class ImageSocketService {
         else if (yolo.has("boxes") && yolo.get("boxes").isJsonArray()) candidates = yolo.getAsJsonArray("boxes");
         else if (yolo.has("dets") && yolo.get("dets").isJsonArray()) candidates = yolo.getAsJsonArray("dets");
 
-        if (candidates == null || candidates.size() == 0) {
-            return yolo;
-        }
+        if (candidates == null || candidates.size() == 0) return yolo;
 
         double bestDist = Double.MAX_VALUE;
         JsonObject picked = null;
@@ -299,10 +284,7 @@ public class ImageSocketService {
             }
         }
 
-        if (picked != null) {
-            yolo.add("best", picked);
-        }
-
+        if (picked != null) yolo.add("best", picked);
         return yolo;
     }
 
