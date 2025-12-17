@@ -11,10 +11,7 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.TitledPane;
-import javafx.scene.control.TextArea;
+import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
@@ -39,17 +36,21 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 
+import javax.swing.plaf.synth.Region;
+
 /**
  * JavaFX 기반 관제 UI
  *
  * 수신 JSON(한 줄에 JSON 1개 + \n 필수):
- *  - SENSOR: {"type":"SENSOR","temp":..,"gas":..,"fire":..,"dust":..,"pir":..}
- *  - IMAGE:  {"type":"IMAGE","data":"base64..."}
- *  - LIDAR:  {"type":"LIDAR","robotX":..,"robotY":..,"robotTheta":..,"points":[[x,y],...]} or [{"x":..,"y":..},...]
- *  - STT:    {"type":"STT","text":"..."}
+ * - SENSOR: {"type":"SENSOR","temp":..,"gas":..,"fire":..,"dust":..,"pir":..}
+ * - IMAGE: {"type":"IMAGE","data":"base64..."}
+ * - LIDAR:
+ * {"type":"LIDAR","robotX":..,"robotY":..,"robotTheta":..,"points":[[x,y],...]}
+ * or [{"x":..,"y":..},...]
+ * - STT: {"type":"STT","text":"..."}
  *
  * 송신 JSON:
- *  - KEY:    {"type":"KEY","cmd":"FORWARD|BACKWARD|LEFT|RIGHT|STOP"}
+ * - KEY: {"type":"KEY","cmd":"FORWARD|BACKWARD|LEFT|RIGHT|STOP"}
  */
 public class MainFx extends Application {
 
@@ -58,10 +59,10 @@ public class MainFx extends Application {
     private static final int SERVER_PORT = 6001;
 
     // --- 배경 이미지 경로 ---
-    // 1) 리소스 우선: src/main/resources/startup_background.png
-    private static final String BG_RESOURCE_PATH = "C:\\Users\\mikoP\\Documents\\GitHub\\Ai_serbot-project\\desktop-client\\startup_background.png";
+    // 1) 리소스 우선: src/main/resources/desktop-client/startup_background.png
+    private static final String BG_RESOURCE_PATH = "desktop-client/startup_background.png";
     // 2) 폴백: 작업 디렉토리에 startup_background.png가 있을 때
-    private static final String BG_FILE_FALLBACK = "file:C:\\Users\\mikoP\\Documents\\GitHub\\Ai_serbot-project\\desktop-client\\startup_background.png";
+    private static final String BG_FILE_FALLBACK = "file:desktop-client/startup_background.png";
 
     // --- 네트워크 ---
     private Socket socket;
@@ -96,12 +97,19 @@ public class MainFx extends Application {
     private TextArea sttTextArea;
     private LineChartWithApi dustChart;
 
+    // --- DB 창 관련 ---
+    private Stage primaryStage; // 메인 스테이지 참조
+    private Stage dbStage; // DB 탭이 들어 있는 별도 스테이지
+    private BlackBoxPanel blackBoxPanel;
+
     @Override
     public void start(Stage stage) {
+        this.primaryStage = stage;
+
         root = new StackPane();
 
         introView = buildIntroView();
-        mainView  = buildMainView();
+        mainView = buildMainView();
 
         root.getChildren().add(introView);
 
@@ -136,7 +144,8 @@ public class MainFx extends Application {
             if (is != null) {
                 return new Image(is);
             }
-        } catch (Exception ignored) { }
+        } catch (Exception ignored) {
+        }
 
         // 2) 폴백 (file:)
         return new Image(BG_FILE_FALLBACK, true);
@@ -161,10 +170,9 @@ public class MainFx extends Application {
         Button skipButton = new Button("Skip");
         skipButton.setStyle(
                 "-fx-background-color: rgba(0,0,0,0.6);" +
-                "-fx-text-fill: white;" +
-                "-fx-font-size: 14px;" +
-                "-fx-background-radius: 20;"
-        );
+                        "-fx-text-fill: white;" +
+                        "-fx-font-size: 14px;" +
+                        "-fx-background-radius: 20;");
         skipButton.setOnAction(e -> showMainView());
 
         introRoot.getChildren().addAll(bgView, statusBox, skipButton);
@@ -205,17 +213,16 @@ public class MainFx extends Application {
         BorderPane content = new BorderPane();
         content.setPadding(new Insets(10));
 
-        // ---- 중앙: (PIR 패널) + (Camera 패널) ----
+        // ---- 중앙: (PIR 패널) + (Camera 패널) + (DB 버튼) ----
         // PIR 패널(카메라 위 별도)
         lblPirPanel = new Label("인체 감지: -");
         lblPirPanel.setStyle(
                 "-fx-font-size: 16px;" +
-                "-fx-font-weight: bold;" +
-                "-fx-text-fill: white;" +
-                "-fx-padding: 8 12 8 12;" +
-                "-fx-background-color: rgba(0,0,0,0.55);" +
-                "-fx-background-radius: 10;"
-        );
+                        "-fx-font-weight: bold;" +
+                        "-fx-text-fill: white;" +
+                        "-fx-padding: 8 12 8 12;" +
+                        "-fx-background-color: rgba(0,0,0,0.55);" +
+                        "-fx-background-radius: 10;");
 
         TitledPane pirPane = new TitledPane("PIR (인체 감지)", wrapCard(lblPirPanel));
         pirPane.setCollapsible(false);
@@ -232,7 +239,16 @@ public class MainFx extends Application {
         TitledPane cameraPane = new TitledPane("Camera", cameraWrapper);
         cameraPane.setCollapsible(false);
 
-        VBox centerBox = new VBox(10, pirPane, cameraPane);
+        // === 여기서 DB 버튼 추가 ===
+        Button dbButton = new Button("DB");
+        dbButton.setPrefWidth(60);
+        dbButton.setOnAction(e -> openDbWindow());
+
+        HBox dbButtonBox = new HBox(dbButton);
+        dbButtonBox.setAlignment(Pos.CENTER_RIGHT);
+        dbButtonBox.setPadding(new Insets(4, 0, 0, 0));
+
+        VBox centerBox = new VBox(10, pirPane, cameraPane, dbButtonBox);
         VBox.setVgrow(cameraPane, Priority.ALWAYS);
         content.setCenter(centerBox);
 
@@ -295,7 +311,6 @@ public class MainFx extends Application {
         rightBox.getChildren().addAll(lidarPane, sttPane, dustPane);
         VBox.setVgrow(lidarPane, Priority.ALWAYS);
         VBox.setVgrow(sttPane, Priority.ALWAYS);
-        // dustPane는 고정 높이(차트 높이)로
 
         content.setRight(rightBox);
 
@@ -312,7 +327,8 @@ public class MainFx extends Application {
     }
 
     private void updateConnectionStatusLabel(boolean connected) {
-        if (lblConnStatus == null || connStatusCircle == null) return;
+        if (lblConnStatus == null || connStatusCircle == null)
+            return;
         if (connected) {
             lblConnStatus.setText("로봇 연결 상태: 연결됨");
             connStatusCircle.setFill(Color.DODGERBLUE);
@@ -336,11 +352,9 @@ public class MainFx extends Application {
 
                 out = new PrintWriter(
                         new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8),
-                        true
-                );
+                        true);
                 in = new BufferedReader(
-                        new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8)
-                );
+                        new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
 
                 out.println("ROLE:GUI");
                 success = true;
@@ -364,7 +378,8 @@ public class MainFx extends Application {
                 }
             });
 
-            if (!success) return;
+            if (!success)
+                return;
 
             try {
                 String line;
@@ -435,7 +450,8 @@ public class MainFx extends Application {
                 double robotTheta = json.optDouble("robotTheta", 0.0);
 
                 JSONArray arr = json.optJSONArray("points");
-                if (arr == null) return;
+                if (arr == null)
+                    return;
 
                 List<LidarPoint> localPoints = new ArrayList<>(arr.length());
                 for (int i = 0; i < arr.length(); i++) {
@@ -444,7 +460,8 @@ public class MainFx extends Application {
                     try {
                         if (elem instanceof JSONArray) {
                             JSONArray p = (JSONArray) elem;
-                            if (p.length() < 2) continue;
+                            if (p.length() < 2)
+                                continue;
                             x = p.getDouble(0);
                             y = p.getDouble(1);
                         } else if (elem instanceof JSONObject) {
@@ -465,7 +482,8 @@ public class MainFx extends Application {
             } else if ("IMAGE".equalsIgnoreCase(type)) {
 
                 String base64 = json.optString("data", null);
-                if (base64 == null || base64.isEmpty()) return;
+                if (base64 == null || base64.isEmpty())
+                    return;
 
                 byte[] bytes = Base64.getDecoder().decode(base64);
                 Platform.runLater(() -> updateCameraImage(bytes));
@@ -502,27 +520,26 @@ public class MainFx extends Application {
     }
 
     private void updatePirPanel(boolean pir) {
-        if (lblPirPanel == null) return;
+        if (lblPirPanel == null)
+            return;
 
         lblPirPanel.setText("인체 감지: " + (pir ? "true" : "false"));
         if (pir) {
             lblPirPanel.setStyle(
                     "-fx-font-size: 16px;" +
-                    "-fx-font-weight: bold;" +
-                    "-fx-text-fill: white;" +
-                    "-fx-padding: 8 12 8 12;" +
-                    "-fx-background-color: rgba(220,20,60,0.75);" +
-                    "-fx-background-radius: 10;"
-            );
+                            "-fx-font-weight: bold;" +
+                            "-fx-text-fill: white;" +
+                            "-fx-padding: 8 12 8 12;" +
+                            "-fx-background-color: rgba(220,20,60,0.75);" +
+                            "-fx-background-radius: 10;");
         } else {
             lblPirPanel.setStyle(
                     "-fx-font-size: 16px;" +
-                    "-fx-font-weight: bold;" +
-                    "-fx-text-fill: white;" +
-                    "-fx-padding: 8 12 8 12;" +
-                    "-fx-background-color: rgba(0,0,0,0.55);" +
-                    "-fx-background-radius: 10;"
-            );
+                            "-fx-font-weight: bold;" +
+                            "-fx-text-fill: white;" +
+                            "-fx-padding: 8 12 8 12;" +
+                            "-fx-background-color: rgba(0,0,0,0.55);" +
+                            "-fx-background-radius: 10;");
         }
     }
 
@@ -539,15 +556,26 @@ public class MainFx extends Application {
     // 6) 키보드 → 로봇 운전 명령 전송
     // ==========================
     private void sendDriveCommand(KeyCode code) {
-        if (out == null) return;
+        if (out == null)
+            return;
 
         String cmd;
         switch (code) {
-            case W: cmd = "FORWARD";  break;
-            case S: cmd = "BACKWARD"; break;
-            case A: cmd = "LEFT";     break;
-            case D: cmd = "RIGHT";    break;
-            case SPACE: cmd = "STOP"; break;
+            case W:
+                cmd = "FORWARD";
+                break;
+            case S:
+                cmd = "BACKWARD";
+                break;
+            case A:
+                cmd = "LEFT";
+                break;
+            case D:
+                cmd = "RIGHT";
+                break;
+            case SPACE:
+                cmd = "STOP";
+                break;
             default:
                 return;
         }
@@ -555,9 +583,40 @@ public class MainFx extends Application {
         String json = String.format("{\"type\":\"KEY\",\"cmd\":\"%s\"}", cmd);
         out.println(json);
         System.out.println("보냄: " + json);
+    }
 
-        // mock 데이터 전송은 요청에 따라 주석 처리
-        // if (code == KeyCode.F5) { ... }
+    // ==========================
+    // 7) DB 창 열기
+    // ==========================
+    private void openDbWindow() {
+        if (dbStage == null) {
+            dbStage = new Stage();
+            dbStage.setTitle("J-SafeGuard DB");
+
+            if (primaryStage != null) {
+                dbStage.initOwner(primaryStage);
+            }
+
+            TabPane tabPane = new TabPane();
+            Tab dbTab = new Tab("BlackBox");
+            dbTab.setClosable(false);
+
+            BorderPane dbRoot = new BorderPane();
+            dbRoot.setPadding(new Insets(10));
+
+            // 🔥 BlackBoxPanel 연결
+            blackBoxPanel = new BlackBoxPanel();
+            dbRoot.setCenter(blackBoxPanel.getView());
+
+            dbTab.setContent(dbRoot);
+            tabPane.getTabs().add(dbTab);
+
+            Scene scene = new Scene(tabPane, 1000, 700);
+            dbStage.setScene(scene);
+        }
+
+        dbStage.show();
+        dbStage.toFront();
     }
 
     public static void main(String[] args) {
@@ -572,6 +631,7 @@ public class MainFx extends Application {
 class LidarPoint {
     final double x;
     final double y;
+
     LidarPoint(double x, double y) {
         this.x = x;
         this.y = y;
@@ -601,9 +661,9 @@ class LidarView extends Canvas {
     }
 
     public void addScan(List<LidarPoint> localPoints,
-                        double robotX,
-                        double robotY,
-                        double robotTheta) {
+            double robotX,
+            double robotY,
+            double robotTheta) {
         synchronized (lock) {
             this.robotX = robotX;
             this.robotY = robotY;
@@ -672,18 +732,24 @@ class LidarView extends Canvas {
                 minDY = maxDY = dy;
                 first = false;
             } else {
-                if (dx < minDX) minDX = dx;
-                if (dx > maxDX) maxDX = dx;
-                if (dy < minDY) minDY = dy;
-                if (dy > maxDY) maxDY = dy;
+                if (dx < minDX)
+                    minDX = dx;
+                if (dx > maxDX)
+                    maxDX = dx;
+                if (dy < minDY)
+                    minDY = dy;
+                if (dy > maxDY)
+                    maxDY = dy;
             }
         }
 
         double margin = 0.1;
         double worldW = (maxDX - minDX);
         double worldH = (maxDY - minDY);
-        if (worldW == 0) worldW = 1;
-        if (worldH == 0) worldH = 1;
+        if (worldW == 0)
+            worldW = 1;
+        if (worldH == 0)
+            worldH = 1;
         worldW *= (1.0 + margin);
         worldH *= (1.0 + margin);
 
