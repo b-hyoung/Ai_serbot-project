@@ -1,28 +1,5 @@
 package org.example;
 
-import javafx.animation.PauseTransition;
-import javafx.application.Application;
-import javafx.application.Platform;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
-import javafx.scene.Scene;
-import javafx.scene.canvas.Canvas;
-import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.chart.LineChart;
-import javafx.scene.chart.NumberAxis;
-import javafx.scene.chart.XYChart;
-import javafx.scene.control.*;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
-import javafx.scene.input.KeyCode;
-import javafx.scene.layout.*;
-import javafx.scene.paint.Color;
-import javafx.scene.shape.Circle;
-import javafx.stage.Stage;
-import javafx.util.Duration;
-import org.json.JSONArray;
-import org.json.JSONObject;
-
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -35,9 +12,47 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import com.studiohartman.jamepad.ControllerManager;
+import com.studiohartman.jamepad.ControllerState;
+
+import javafx.animation.PauseTransition;
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.scene.canvas.Canvas;
+import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.chart.LineChart;
+import javafx.scene.chart.NumberAxis;
+import javafx.scene.chart.XYChart;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.TitledPane;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.input.KeyCode;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Circle;
+import javafx.stage.Stage;
+import javafx.util.Duration;
 
 /**
  * JavaFX 기반 관제 UI
@@ -46,12 +61,13 @@ import javafx.scene.layout.Region;
  * - SENSOR: {"type":"SENSOR","temp":..,"gas":..,"fire":..,"dust":..,"pir":..}
  * - IMAGE: {"type":"IMAGE","data":"base64..."}
  * - LIDAR:
- * {"type":"LIDAR","robotX":..,"robotY":..,"robotTheta":..,"points":[[x,y],...]}
- * or [{"x":..,"y":..},...]
+ *   {"type":"LIDAR","robotX":..,"robotY":..,"robotTheta":..,"points":[[x,y],...]}
+ *   or [{"x":..,"y":..},...]
  * - STT: {"type":"STT","text":"..."}
  *
  * 송신 JSON:
  * - KEY: {"type":"KEY","cmd":"FORWARD|BACKWARD|LEFT|RIGHT|STOP"}
+ * - PAD: {"type":"PAD","lx":..,"ly":..,"rx":..}
  */
 public class MainFx extends Application {
 
@@ -70,16 +86,16 @@ public class MainFx extends Application {
     private static final int SERVER_PORT = 6001;
 
     // JVM 옵션으로 덮어쓰기 가능: -DSERBOT_DB_URL=... -DSERBOT_DB_USER=... -DSERBOT_DB_PASS=...
-// 환경변수로도 가능: SERBOT_DB_URL / SERBOT_DB_USER / SERBOT_DB_PASS
+    // 환경변수로도 가능: SERBOT_DB_URL / SERBOT_DB_USER / SERBOT_DB_PASS
     private static String DB_URL  = pick("SERBOT_DB_URL",  "jdbc:mysql://localhost:3306/serbot?useSSL=false&serverTimezone=Asia/Seoul");
     private static String DB_USER = pick("SERBOT_DB_USER", "root");
     private static String DB_PASS = pick("SERBOT_DB_PASS", "");
 
     // --- 배경 이미지 경로 ---
     // 1) 리소스 우선: src/main/resources/desktop-client/startup_background.png
-    private static final String BG_RESOURCE_PATH = "desktop-client/startup_background.png";
+    private static final String BG_RESOURCE_PATH = "desktop-client\\startup_background.png";
     // 2) 폴백: 작업 디렉토리에 startup_background.png가 있을 때
-    private static final String BG_FILE_FALLBACK = "file:desktop-client/startup_background.png";
+    private static final String BG_FILE_FALLBACK = "file:startup_background.png";
 
     // --- 네트워크 ---
     private Socket socket;
@@ -118,12 +134,23 @@ public class MainFx extends Application {
     private Stage blackBoxStage;
     private BlackBoxPanel blackBoxPanel;
 
+    // --- 게임패드 관련 ---
+    private ControllerManager controllers;
+    private ScheduledExecutorService gamepadExecutor;
+    // 마지막으로 전송한 아날로그 값 (변화 있을 때만 다시 전송)
+    private float lastLX = 0f; // left stick X
+    private float lastLY = 0f; // left stick Y
+    private float lastRX = 0f; // right stick X
+    // 줌 버튼 이전 상태 (엣지 감지용)
+    private boolean lastZoomInPressed = false;   // RB
+    private boolean lastZoomOutPressed = false;  // LB
+
     @Override
     public void start(Stage stage) {
         root = new StackPane();
 
         introView = buildIntroView();
-        mainView = buildMainView();
+        mainView  = buildMainView();
 
         root.getChildren().add(introView);
 
@@ -137,6 +164,24 @@ public class MainFx extends Application {
 
         // 로봇 연결 시도 시작
         startRobotConnection();
+
+        // 게임패드 초기화 & 폴링 시작
+        initGamepad();
+    }
+
+    @Override
+    public void stop() throws Exception {
+        super.stop();
+        // 게임패드 정리
+        try {
+            if (controllers != null) {
+                controllers.quitSDLGamepad();
+            }
+        } catch (Throwable ignored) {
+        }
+        if (gamepadExecutor != null) {
+            gamepadExecutor.shutdownNow();
+        }
     }
 
     // ==========================
@@ -443,12 +488,12 @@ public class MainFx extends Application {
                 boolean pir = json.optBoolean("pir", false);
 
                 Platform.runLater(() -> {
-                    // gasChart를 co2 그래프로 쓰기(이름은 너가 바꾸면 됨)
+                    // gasChart를 co2 그래프로 쓰기
                     if (!Double.isNaN(co2)) gasChart.addValue(co2);
 
                     updateFireStatus(fire);
 
-                    // dustChart는 pm25만 그리거나, pm10용 차트를 하나 더 만들든지 선택
+                    // dustChart는 pm25만 그리기
                     if (!Double.isNaN(pm25) && dustChart != null) {
                         dustChart.addValue(pm25);
                     }
@@ -457,7 +502,7 @@ public class MainFx extends Application {
                 });
 
                 return;
-            }else if ("LIDAR".equalsIgnoreCase(type)) {
+            } else if ("LIDAR".equalsIgnoreCase(type)) {
 
                 double robotX = json.optDouble("robotX", 0.0);
                 double robotY = json.optDouble("robotY", 0.0);
@@ -516,7 +561,6 @@ public class MainFx extends Application {
 
                 boolean finalPerson = person;
                 Platform.runLater(() -> updatePirPanel(finalPerson));
-
             }
         } catch (Exception e) {
             System.out.println("데이터 형식 오류: " + line);
@@ -599,7 +643,6 @@ public class MainFx extends Application {
         System.out.println("보냄: " + json);
     }
 
-
     // ==========================
     // 7) BlackBox 새 창 열기 (DB 재생)
     // ==========================
@@ -680,6 +723,114 @@ public class MainFx extends Application {
         }
     }
 
+    // ==========================
+    // 8) 게임패드 기능
+    // ==========================
+
+    // 게임패드 초기화
+    private void initGamepad() {
+        try {
+            controllers = new ControllerManager();
+            controllers.initSDLGamepad();
+            System.out.println("Jamepad 초기화 완료.");
+
+            // 50ms마다 게임패드 상태 폴링 (20Hz)
+            gamepadExecutor = Executors.newSingleThreadScheduledExecutor();
+            gamepadExecutor.scheduleAtFixedRate(this::pollGamepad, 0, 50, TimeUnit.MILLISECONDS);
+
+        } catch (Throwable t) {
+            t.printStackTrace();
+            Platform.runLater(() -> {
+                if (lblConnStatus != null) {
+                    lblConnStatus.setText("로봇 연결 상태: 서버 연결됨 (패드 초기화 실패)");
+                }
+            });
+        }
+    }
+
+    /**
+     * - 왼쪽 스틱 X/Y, 오른쪽 스틱 X → PAD JSON 전송
+     * - LB / RB → LiDAR 줌 in/out (엣지 감지)
+     */
+    private void pollGamepad() {
+        if (controllers == null) {
+            return;
+        }
+
+        ControllerState state = controllers.getState(0);
+
+        if (!state.isConnected) {
+            Platform.runLater(() -> {
+                if (lblConnStatus != null && connStatusCircle != null) {
+                    lblConnStatus.setText("로봇 연결 상태: 연결됨 (패드 없음)");
+                }
+            });
+            return;
+        }
+
+        // 서버 소켓이 아직 없으면, 연결될 때까지 전송은 보류
+        if (out == null) {
+            return;
+        }
+
+        // 왼쪽 스틱 X/Y, 오른쪽 스틱 X
+        float lx = state.leftStickX;
+        float ly = state.leftStickY;
+        float rx = state.rightStickX;
+
+        // 줌 버튼 (LB/RB)
+        boolean zoomOutPressed = state.lb;  // LB → zoom out
+        boolean zoomInPressed  = state.rb;  // RB → zoom in
+
+        // 데드존 적용
+        lx = deadZone(lx, 0.05f);
+        ly = deadZone(ly, 0.05f);
+        rx = deadZone(rx, 0.05f);
+
+        // 값 변화가 거의 없으면 전송하지 않음
+        float epsilon = 0.01f;
+        if (Math.abs(lx - lastLX) >= epsilon ||
+            Math.abs(ly - lastLY) >= epsilon ||
+            Math.abs(rx - lastRX) >= epsilon) {
+
+            lastLX = lx;
+            lastLY = ly;
+            lastRX = rx;
+
+            sendAnalogState(lx, ly, rx);
+        }
+
+        // LiDAR 맵 줌 인/아웃
+        if (lidarView != null) {
+            if (zoomInPressed && !lastZoomInPressed) {
+                Platform.runLater(() -> lidarView.adjustZoom(1.2));   // 줌 인
+            }
+            if (zoomOutPressed && !lastZoomOutPressed) {
+                Platform.runLater(() -> lidarView.adjustZoom(0.8));   // 줌 아웃
+            }
+        }
+
+        lastZoomInPressed = zoomInPressed;
+        lastZoomOutPressed = zoomOutPressed;
+    }
+
+    // 헬퍼: 데드존 처리
+    private float deadZone(float value, float threshold) {
+        return Math.abs(value) < threshold ? 0.0f : value;
+    }
+
+    /** 아날로그 스틱 값을 JSON으로 서버에 전송 */
+    private void sendAnalogState(float lx, float ly, float rx) {
+        if (out == null) return;
+
+        String json = String.format(Locale.US,
+                "{\"type\":\"PAD\",\"lx\":%.3f,\"ly\":%.3f,\"rx\":%.3f}",
+                lx, ly, rx);
+
+        out.println(json);
+        System.out.println("패드 아날로그 전송: " + json);
+    }
+
     public static void main(String[] args) {
         launch(args);
     }
@@ -710,7 +861,7 @@ class LidarView extends Canvas {
     private double robotY = 0.0;
     private double robotTheta = 0.0;
 
-    private double zoomFactor = 1.0;
+    double zoomFactor = 1.0;
     private static final int MAX_POINTS = 20000;
 
     public LidarView() {
@@ -722,9 +873,9 @@ class LidarView extends Canvas {
     }
 
     public void addScan(List<LidarPoint> localPoints,
-            double robotX,
-            double robotY,
-            double robotTheta) {
+                        double robotX,
+                        double robotY,
+                        double robotTheta) {
         synchronized (lock) {
             this.robotX = robotX;
             this.robotY = robotY;
@@ -748,6 +899,16 @@ class LidarView extends Canvas {
             }
 
             lastScanGlobal = newGlobal;
+        }
+        draw();
+    }
+
+    // === 패드 LB/RB 에서 호출하는 줌 기능 ===
+    public void adjustZoom(double multiplier) {
+        synchronized (lock) {
+            zoomFactor *= multiplier;
+            if (zoomFactor < 0.2) zoomFactor = 0.2;
+            if (zoomFactor > 10.0) zoomFactor = 10.0;
         }
         draw();
     }
