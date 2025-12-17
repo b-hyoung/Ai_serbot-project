@@ -18,7 +18,7 @@ repositories {
 dependencies {
     implementation 'org.json:json:20231013'
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-
+    implementation 'com.mysql:mysql-connector-j:9.1.0'  // ✅ 여기만 수정
     testImplementation platform('org.junit:junit-bom:5.10.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

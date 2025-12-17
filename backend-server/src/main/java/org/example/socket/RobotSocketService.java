@@ -2,6 +2,7 @@ package org.example.socket;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.example.database.repo.SensorSnapshotRepo;
 import org.example.state.SensorState;
 import org.example.state.StateUpdater;
 
@@ -21,13 +22,23 @@ public class RobotSocketService {
     private final SensorState state;
     private GUISocketService guiService;
 
+    // ===== stale / snapshot =====
     private static final long DUST_STALE_MS = 3_000;
+    private static final long PIR_STALE_MS  = 3_000;
+    private static final long VISION_STALE_MS = 3_000;
+
     private static final long SNAPSHOT_INTERVAL_MS = 500;
+
+    // ===== demo defaults =====
     private static final double CO2_DEMO_DEFAULT = 450.0;
 
     private double demoPm25 = 18.0;
     private double demoPm10 = 28.0;
     private int demoTick = 0;
+
+    // DB
+    private final SensorSnapshotRepo sensorRepo = new SensorSnapshotRepo();
+
 
     public RobotSocketService(SensorState state) {
         this.state = state;
@@ -49,7 +60,7 @@ public class RobotSocketService {
                     Socket socket = serverSocket.accept();
                     socket.setTcpNoDelay(true);
 
-                    // ✅ 새 로봇이 붙으면 기존 소켓 정리 (중복 연결로 상태 꼬임 방지)
+                    // 새 로봇이 붙으면 기존 소켓 정리
                     Socket prev = robotSocket;
                     if (prev != null && !prev.isClosed()) {
                         try {
@@ -85,14 +96,14 @@ public class RobotSocketService {
                         }
                     } catch (Exception ignored) {}
 
-                    // 2) SENSOR는 상태 갱신만 하고 raw는 GUI로 보내지 않음
-                    if ("SENSOR".equals(type) || "STT".equals(type) || "VISION".equals(type)) {
-                        // ✅ StateUpdater가 처리하는 타입만 상태에 반영
+                    // 2) State 반영 (SENSOR / STT / VISION)
+                    //    - PIR은 SENSOR에 같이 오거나, 별도 타입으로 올 수도 있음(프로젝트 상황에 따라)
+                    if ("SENSOR".equals(type) || "STT".equals(type) || "VISION".equals(type) || "PIR".equals(type)) {
                         try { StateUpdater.applyJson(line, state); } catch (Exception ignored) {}
                     }
 
-                    // 3) ✅ SENSOR만 제외하고, 나머지는 GUI로 그대로 전달
-                    //    (LIDAR, IMAGE, LLM, 등은 raw forwarding 필요)
+                    // 3) GUI로 raw forwarding
+                    //    - SENSOR는 snapshot으로만 보내고 raw는 보내지 않는다(중복/형식불일치 방지)
                     if (guiService != null && guiService.isConnected()) {
                         if (!"SENSOR".equals(type)) {
                             guiService.sendToGui(line);
@@ -116,13 +127,11 @@ public class RobotSocketService {
                     Thread.sleep(SNAPSHOT_INTERVAL_MS);
 
                     if (guiService == null || !guiService.isConnected()) continue;
-
-                    // ✅ 로봇 연결 전에는 snapshot 송신 금지
                     if (!isConnected()) continue;
 
                     long now = System.currentTimeMillis();
 
-                    // dust stale 보정
+                    // ===== dust stale 보정 (B방향: null/미수신이면 demo 생성해서 state에 넣고 GUI로 보냄) =====
                     if (state.getDustTs() == null || (now - state.getDustTs()) > DUST_STALE_MS) {
                         demoTick++;
                         if (demoTick % 5 == 0) {
@@ -132,25 +141,82 @@ public class RobotSocketService {
                         state.setDust(demoPm25, demoPm10, "DEMO");
                     }
 
-                    // 완전체 snapshot 강제
+                    // ===== snapshot 생성 =====
                     JsonObject snap = new JsonObject();
                     snap.addProperty("type", "SENSOR");
 
+                    // fire는 flame(0~1) 기반으로 계산
                     boolean fire = false;
                     Double flame = state.getFlame();
                     if (flame != null) fire = flame > 0.5;
                     snap.addProperty("fire", fire);
 
+                    // co2 기본값
                     Double co2 = state.getCo2();
                     snap.addProperty("co2", (co2 != null) ? co2 : CO2_DEMO_DEFAULT);
 
+                    // dust
                     JsonObject dust = new JsonObject();
                     Double pm25 = state.getPm25();
                     Double pm10 = state.getPm10();
                     dust.addProperty("pm25", (pm25 != null) ? pm25 : demoPm25);
                     dust.addProperty("pm10", (pm10 != null) ? pm10 : demoPm10);
                     snap.add("dust", dust);
+                    if (state.getDustSource() != null) {
+                        snap.addProperty("dustSource", state.getDustSource());
+                    }
 
+                    // ===== PIR / VISION 동시 포함 (서버 시각 기준 stale 처리) =====
+                    // pir
+                    Boolean pir = state.getPir();
+                    Long pirTs = state.getPirTs();
+                    boolean pirValid = (pirTs != null) && ((now - pirTs) <= PIR_STALE_MS);
+                    snap.addProperty("pir", (pir != null && pirValid) ? pir : false);
+                    snap.addProperty("pirStale", !pirValid);
+
+                    // visionPerson
+                    Boolean visionPerson = state.getVisionPerson();
+                    Long visionTs = state.getVisionTs();
+                    boolean visionValid = (visionTs != null) && ((now - visionTs) <= VISION_STALE_MS);
+                    snap.addProperty("visionPerson", (visionPerson != null && visionValid) ? visionPerson : false);
+                    snap.addProperty("visionStale", !visionValid);
+
+                    // 선택: conf도 같이
+                    Double conf = state.getVisionConf();
+                    if (conf != null) snap.addProperty("visionConf", conf);
+
+                    /* DB 전송 */
+                    long ts = now;
+
+                    boolean fireVal = fire;
+                    double co2Val = (co2 != null) ? co2 : CO2_DEMO_DEFAULT;
+                    double pm25Val = (pm25 != null) ? pm25 : demoPm25;
+                    double pm10Val = (pm10 != null) ? pm10 : demoPm10;
+
+                    // source 컬럼에 DEMO/REAL 넣기
+                    String sourceVal = (state.getDustSource() != null && !state.getDustSource().isBlank())
+                            ? state.getDustSource()
+                            : "REAL";
+
+                    // vision 기반 사람 감지(시연용)
+                    boolean visionPersonVal = (visionPerson != null && visionValid) ? visionPerson : false;
+                    Double visionConfVal = conf;
+                    boolean personDetected = visionPersonVal && (visionConfVal == null || visionConfVal >= 0.5);
+
+                    // ✅ DB insert (pir 컬럼에 personDetected 저장)
+                    sensorRepo.insert(
+                            ts,
+                            fireVal,
+                            co2Val,
+                            pm25Val,
+                            pm10Val,
+                            personDetected, // pir
+                            sourceVal
+                    );
+                    //
+
+
+                    // 최종: GUI로 snapshot 송신
                     guiService.sendToGui(snap.toString());
 
                 } catch (InterruptedException e) {

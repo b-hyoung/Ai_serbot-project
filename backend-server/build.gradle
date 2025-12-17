@@ -1,7 +1,11 @@
 plugins {
     id 'java'
 }
-
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
 group = 'org.example'
 version = '1.0-SNAPSHOT'
 
@@ -16,6 +20,13 @@ dependencies {
     implementation 'org.json:json:20231013' // JSON 파싱 도구
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.mysql:mysql-connector-j:9.5.0'
+}
+tasks.register("dbTest", JavaExec) {
+    group = "application"
+    description = "Run DbTest"
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = "org.example.Database.DbTest"
 }
 
 test {
