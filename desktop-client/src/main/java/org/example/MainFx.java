@@ -54,7 +54,7 @@ import java.util.Locale;
 public class MainFx extends Application {
 
     // --- 서버 연결 정보 ---
-    private static final String SERVER_IP = "192.168.0.22";
+    private static final String SERVER_IP = "192.168.0.31";
     private static final int SERVER_PORT = 6001;
 
     // --- 배경 이미지 경로 ---
@@ -395,31 +395,40 @@ public class MainFx extends Application {
 
             if ("SENSOR".equalsIgnoreCase(type)) {
 
-                double temp = json.optDouble("temp", Double.NaN);
-                double gas  = json.optDouble("gas", Double.NaN);
+                // 새 표준: fire(boolean), co2(number), dust(object{pm25,pm10}), pir(optional)
                 boolean fire = json.optBoolean("fire", false);
 
-                // 추가 센서
-                double dust = json.optDouble("dust", Double.NaN);
+                double co2 = json.optDouble("co2", Double.NaN);
+
+                JSONObject dustObj = json.optJSONObject("dust");
+                double pm25;
+                double pm10 = Double.NaN;
+                if (dustObj != null) {
+                    pm25 = dustObj.optDouble("pm25", Double.NaN);
+                    pm10 = dustObj.optDouble("pm10", Double.NaN);
+                } else {
+                    pm25 = Double.NaN;
+                }
+
                 boolean hasPir = json.has("pir");
                 boolean pir = json.optBoolean("pir", false);
 
                 Platform.runLater(() -> {
-                    if (!Double.isNaN(temp)) tempChart.addValue(temp);
-                    if (!Double.isNaN(gas))  gasChart.addValue(gas);
+                    // gasChart를 co2 그래프로 쓰기(이름은 너가 바꾸면 됨)
+                    if (!Double.isNaN(co2)) gasChart.addValue(co2);
 
                     updateFireStatus(fire);
 
-                    if (!Double.isNaN(dust) && dustChart != null) {
-                        dustChart.addValue(dust);
+                    // dustChart는 pm25만 그리거나, pm10용 차트를 하나 더 만들든지 선택
+                    if (!Double.isNaN(pm25) && dustChart != null) {
+                        dustChart.addValue(pm25);
                     }
 
-                    if (hasPir) {
-                        updatePirPanel(pir);
-                    }
+                    if (hasPir) updatePirPanel(pir);
                 });
 
-            } else if ("LIDAR".equalsIgnoreCase(type)) {
+                return;
+            }else if ("LIDAR".equalsIgnoreCase(type)) {
 
                 double robotX = json.optDouble("robotX", 0.0);
                 double robotY = json.optDouble("robotY", 0.0);
@@ -467,8 +476,16 @@ public class MainFx extends Application {
                 if (!text.isEmpty()) {
                     Platform.runLater(() -> sttTextArea.appendText(text + System.lineSeparator()));
                 }
-            }
+            } else if ("VISION".equalsIgnoreCase(type)) {
 
+                JSONObject yolo = json.optJSONObject("yolo");
+                boolean person = false;
+                if (yolo != null) person = yolo.optBoolean("person", false);
+
+                boolean finalPerson = person;
+                Platform.runLater(() -> updatePirPanel(finalPerson));
+
+            }
         } catch (Exception e) {
             System.out.println("데이터 형식 오류: " + line);
         }

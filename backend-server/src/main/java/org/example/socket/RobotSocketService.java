@@ -1,6 +1,7 @@
 package org.example.socket;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.example.state.SensorState;
 import org.example.state.StateUpdater;
 
@@ -10,12 +11,6 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 
-/**
- * 역할 정리
- * - 로봇 → 서버 : raw SENSOR / STT / CMD 수신 → SensorState 갱신
- * - 서버 → GUI   : 주기적 SENSOR_SNAPSHOT "완전체" 전송 (부분 전송 금지)
- * - dust demo    : SensorState 보정용 (이벤트 생성 ❌)
- */
 public class RobotSocketService {
 
     private final int PORT = 6000;
@@ -26,12 +21,8 @@ public class RobotSocketService {
     private final SensorState state;
     private GUISocketService guiService;
 
-    // ===== demo / stale 보정 =====
     private static final long DUST_STALE_MS = 3_000;
     private static final long SNAPSHOT_INTERVAL_MS = 500;
-
-    // co2가 안 들어오는 환경이면 demo로 채우는 게 더 안정적
-    // (400~800은 "안전/정상"으로 보이기 쉬움)
     private static final double CO2_DEMO_DEFAULT = 450.0;
 
     private double demoPm25 = 18.0;
@@ -46,9 +37,6 @@ public class RobotSocketService {
         this.guiService = guiService;
     }
 
-    // =========================
-    // 서버 시작
-    // =========================
     public void startServer() {
         startSnapshotThread();
 
@@ -60,6 +48,16 @@ public class RobotSocketService {
                 while (true) {
                     Socket socket = serverSocket.accept();
                     socket.setTcpNoDelay(true);
+
+                    // ✅ 새 로봇이 붙으면 기존 소켓 정리 (중복 연결로 상태 꼬임 방지)
+                    Socket prev = robotSocket;
+                    if (prev != null && !prev.isClosed()) {
+                        try {
+                            System.out.println("⚠ Previous robot socket exists -> closing old connection");
+                            prev.close();
+                        } catch (Exception ignored) {}
+                    }
+
                     System.out.println("🤖 Robot connected: " + socket.getInetAddress());
                     handleRobot(socket);
                 }
@@ -69,9 +67,6 @@ public class RobotSocketService {
         }, "Robot-Accept").start();
     }
 
-    // =========================
-    // 로봇 수신
-    // =========================
     private void handleRobot(Socket socket) {
         new Thread(() -> {
             try {
@@ -80,13 +75,31 @@ public class RobotSocketService {
 
                 String line;
                 while ((line = in.readLine()) != null) {
+
+                    // 1) 타입 확인(빠르게)
+                    String type = null;
                     try {
-                        // raw JSON은 GUI로 직접 전달 금지
-                        StateUpdater.applyJson(line, state);
-                    } catch (Exception e) {
-                        System.out.println("⚠ Robot JSON parse ignored");
+                        JsonObject obj = JsonParser.parseString(line).getAsJsonObject();
+                        if (obj.has("type") && !obj.get("type").isJsonNull()) {
+                            type = obj.get("type").getAsString();
+                        }
+                    } catch (Exception ignored) {}
+
+                    // 2) SENSOR는 상태 갱신만 하고 raw는 GUI로 보내지 않음
+                    if ("SENSOR".equals(type) || "STT".equals(type) || "VISION".equals(type)) {
+                        // ✅ StateUpdater가 처리하는 타입만 상태에 반영
+                        try { StateUpdater.applyJson(line, state); } catch (Exception ignored) {}
+                    }
+
+                    // 3) ✅ SENSOR만 제외하고, 나머지는 GUI로 그대로 전달
+                    //    (LIDAR, IMAGE, LLM, 등은 raw forwarding 필요)
+                    if (guiService != null && guiService.isConnected()) {
+                        if (!"SENSOR".equals(type)) {
+                            guiService.sendToGui(line);
+                        }
                     }
                 }
+
             } catch (Exception e) {
                 System.out.println("🤖 Robot disconnected");
             } finally {
@@ -96,9 +109,6 @@ public class RobotSocketService {
         }, "Robot-Conn").start();
     }
 
-    // =========================
-    // SENSOR_SNAPSHOT 생성 (완전체 강제)
-    // =========================
     private void startSnapshotThread() {
         new Thread(() -> {
             while (true) {
@@ -107,12 +117,12 @@ public class RobotSocketService {
 
                     if (guiService == null || !guiService.isConnected()) continue;
 
-                    // ✅ 로봇 연결 전에는 snapshot 자체를 보내지 않음
+                    // ✅ 로봇 연결 전에는 snapshot 송신 금지
                     if (!isConnected()) continue;
 
                     long now = System.currentTimeMillis();
 
-                    // ---- dust stale 보정: 없으면 DEMO로 채움 ----
+                    // dust stale 보정
                     if (state.getDustTs() == null || (now - state.getDustTs()) > DUST_STALE_MS) {
                         demoTick++;
                         if (demoTick % 5 == 0) {
@@ -122,30 +132,23 @@ public class RobotSocketService {
                         state.setDust(demoPm25, demoPm10, "DEMO");
                     }
 
-                    // ---- snapshot 생성: "항상 동일 스키마" ----
+                    // 완전체 snapshot 강제
                     JsonObject snap = new JsonObject();
                     snap.addProperty("type", "SENSOR");
 
-                    // fire: 항상 boolean
                     boolean fire = false;
                     Double flame = state.getFlame();
                     if (flame != null) fire = flame > 0.5;
                     snap.addProperty("fire", fire);
 
-                    // co2: 항상 number
                     Double co2 = state.getCo2();
                     snap.addProperty("co2", (co2 != null) ? co2 : CO2_DEMO_DEFAULT);
 
-                    // dust: 항상 object + pm25/pm10 둘 다 number
                     JsonObject dust = new JsonObject();
                     Double pm25 = state.getPm25();
                     Double pm10 = state.getPm10();
-
-                    // dust 보정 로직을 탔으면 pm25/pm10은 거의 항상 존재해야 하지만,
-                    // 혹시라도 null이면 demo 값으로 강제 채움
                     dust.addProperty("pm25", (pm25 != null) ? pm25 : demoPm25);
                     dust.addProperty("pm10", (pm10 != null) ? pm10 : demoPm10);
-
                     snap.add("dust", dust);
 
                     guiService.sendToGui(snap.toString());
@@ -159,9 +162,6 @@ public class RobotSocketService {
         }, "Sensor-Snapshot").start();
     }
 
-    // =========================
-    // 로봇으로 명령 송신
-    // =========================
     public void sendToRobot(String msg) {
         try {
             if (robotSocket != null && !robotSocket.isClosed()) {
@@ -169,7 +169,7 @@ public class RobotSocketService {
                 out.println(msg);
             }
         } catch (Exception e) {
-            System.out.println("⚠ sendToRobot failed");
+            System.out.println("⚠ sendToRobot failed: " + e.getMessage());
         }
     }
 

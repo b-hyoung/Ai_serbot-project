@@ -8,6 +8,7 @@ import org.example.service.VisionClient;
 import org.example.socket.GUISocketService;
 import org.example.socket.ImageSocketService;
 import org.example.socket.RobotSocketService;
+import org.example.socket.VideoSocketService;
 import org.example.state.SensorState;
 
 import java.util.concurrent.Executors;
@@ -40,10 +41,16 @@ public class Main {
         VisionClient visionClient = new VisionClient("http://127.0.0.1:8008");
         ImageSocketService imageServer = new ImageSocketService(guiServer, visionClient, state, robotServer);
 
+        VideoSocketService video = new VideoSocketService();
+        video.setGuiService(guiServer);
+
+
         // ====== Start Servers ======
         robotServer.startServer(); // 6000
         guiServer.startServer();   // 6001
         imageServer.startServer(); // 6002
+        video.startServer(); // 6003
+
 
         System.out.println("⏳ 로봇 접속을 기다리는 중...");
         while (!robotServer.isConnected()) {
