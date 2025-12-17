@@ -26,6 +26,8 @@ public class PromptBuilder {
         if (nowMs - lastLlmCallAtMs < cooldownMs) return false;
         return evidence == SurvivorEvidence.CONFIRMED;
     }
+    /*
+    * */
 
     /* =========================================================
        1) (권장) 2키 메시지 생성 프롬프트: voice + gui 둘 다 생성
@@ -74,14 +76,14 @@ public class PromptBuilder {
                 + "    \"robot_action\": \"" + robotAction + "\"\n"
                 + "  },\n"
                 + "  \"sensors\": {\n"
-                + "    \"flame\": " + n(s.flame) + ",\n"
-                + "    \"co2\": " + n(s.co2) + ",\n"
-                + "    \"pm25\": " + n(s.pm25) + ",\n"
-                + "    \"pm10\": " + n(s.pm10) + ",\n"
-                + "    \"pir\": " + b(s.pir) + "\n"
+                + "    \"flame\": " + n(s.getFlame()) + ",\n"
+                + "    \"co2\": " + n(s.getCo2()) + ",\n"
+                + "    \"pm25\": " + n(s.getPm25()) + ",\n"
+                + "    \"pm10\": " + n(s.getPm10()) + ",\n"
+                + "    \"pir\": " + b(s.getPir()) + "\n"
                 + "  },\n"
                 + "  \"audio\": {\n"
-                + "    \"last_stt\": \"" + q(s.lastStt) + "\"\n"
+                + "    \"last_stt\": \"" + q(s.getLastStt()) + "\"\n"
                 + "  },\n"
                 + "  \"gui_message_fixed\": \"" + q(guiMessageFixed) + "\"\n"
                 + "}";
@@ -118,16 +120,16 @@ public class PromptBuilder {
                 "{\n" +
                         "  \"phase\": \"" + phase + "\",\n" +
                         "  \"sensors\": {\n" +
-                        "    \"flame\": " + n(s.flame) + ",\n" +
-                        "    \"co2\": " + n(s.co2) + ",\n" +
-                        "    \"pm25\": " + n(s.pm25) + ",\n" +
-                        "    \"pm10\": " + n(s.pm10) + ",\n" +
+                        "    \"flame\": " + n(s.getFlame()) + ",\n" +
+                        "    \"co2\": " + n(s.getCo2()) + ",\n" +
+                        "    \"pm25\": " + n(s.getPm25()) + ",\n" +
+                        "    \"pm10\": " + n(s.getPm10()) + ",\n" +
                         "    \"gas\": " + (gas == null ? "null" : gas) + ",\n" +
-                        "    \"pir\": " + b(s.pir) + ",\n" +
+                        "    \"pir\": " + b(s.getPir()) + ",\n" +
                         "    \"vision_person\": " + (visionPerson ? "true" : "false") + "\n" +
                         "  },\n" +
                         "  \"audio\": {\n" +
-                        "    \"recent_stt\": \"" + q(s.lastStt) + "\",\n" +
+                        "    \"recent_stt\": \"" + q(s.getLastStt()) + "\",\n" +
                         "    \"has_human_like_speech\": " + (hasHumanLikeSpeech ? "true" : "false") + "\n" +
                         "  },\n" +
                         "  \"survivor\": {\n" +
@@ -178,7 +180,7 @@ public class PromptBuilder {
                 + "    \"survivor_state\": \"CONSCIOUS\",\n"
                 + "    \"robot_action\": \"GUIDE_SURVIVOR\",\n"
                 + "    \"gui_message\": \"[긴급] 화재 구역 / 의식 있는 생존자\",\n"
-                + "    \"voice_instruction\": \"오퍼레이터님, 고위험 화재 구역에서 의식 있는 생존자를 발견했습니다. 대피 유도를 시작하겠습니다.\",\n"
+                + "    \"voice_instruction\": \"고위험 화재 구역에서 의식 있는 생존자를 발견했습니다. 대피 유도를 시작하겠습니다.\",\n"
                 + "    \"survivor_speech\": \"저는 구조 로봇입니다. 이 구역은 위험하니 즉시 저를 따라 대피해야 합니다. 스스로 이동 가능하십니까?\"\n"
                 + "  }\n"
                 + "}\n"
@@ -189,7 +191,7 @@ public class PromptBuilder {
                 + "  \"survivor_state\": \"CONSCIOUS\",\n"
                 + "  \"robot_action\": \"GUIDE_SURVIVOR\",\n"
                 + "  \"gui_message\": \"[긴급] 화재 구역 / 의식 있는 생존자\",\n"
-                + "  \"voice_instruction\": \"오퍼레이터님, 고위험 화재 구역에서 의식 있는 생존자를 발견했습니다. 대피 유도를 시작하겠습니다.\",\n"
+                + "  \"voice_instruction\": \"고위험 화재 구역에서 의식 있는 생존자를 발견했습니다. 대피 유도를 시작하겠습니다.\",\n"
                 + "  \"survivor_speech\": \"저는 구조 로봇입니다. 이 구역은 위험하니 즉시 저를 따라 대피해야 합니다. 스스로 이동 가능하십니까?\"\n"
                 + "}\n"
                 + "\n"
@@ -221,7 +223,7 @@ public class PromptBuilder {
                 + "    \"survivor_state\": \"NONE\",\n"
                 + "    \"robot_action\": \"SEARCH\",\n"
                 + "    \"gui_message\": \"[정상] 안전 구역 / 수색 지속\",\n"
-                + "    \"voice_instruction\": \"오퍼레이터님, 현재 구역은 안전합니다. 수색을 계속 진행하겠습니다.\",\n"
+                + "    \"voice_instruction\": \"현재 구역은 안전합니다. 수색을 계속 진행하겠습니다.\",\n"
                 + "    \"survivor_speech\": \"\"\n"
                 + "  }\n"
                 + "}\n"
@@ -232,7 +234,7 @@ public class PromptBuilder {
                 + "  \"survivor_state\": \"NONE\",\n"
                 + "  \"robot_action\": \"SEARCH\",\n"
                 + "  \"gui_message\": \"[정상] 안전 구역 / 수색 지속\",\n"
-                + "  \"voice_instruction\": \"오퍼레이터님, 현재 구역은 안전합니다. 수색을 계속 진행하겠습니다.\",\n"
+                + "  \"voice_instruction\": \"현재 구역은 안전합니다. 수색을 계속 진행하겠습니다.\",\n"
                 + "  \"survivor_speech\": \"\"\n"
                 + "}\n"
                 + "\n"
@@ -258,16 +260,16 @@ public class PromptBuilder {
                 + "    \"robot_action\": \"" + robotAction + "\"\n"
                 + "  },\n"
                 + "  \"sensors\": {\n"
-                + "    \"flame\": " + n(s.flame) + ",\n"
-                + "    \"co2\": " + n(s.co2) + ",\n"
-                + "    \"pm25\": " + n(s.pm25) + ",\n"
-                + "    \"pm10\": " + n(s.pm10) + ",\n"
-                + "    \"pir\": " + b(s.pir) + ",\n"
-                + "    \"ultrasonic\": " + n(s.ultrasonic) + "\n"
+                + "    \"flame\": " + n(s.getFlame()) + ",\n"
+                + "    \"co2\": " + n(s.getCo2()) + ",\n"
+                + "    \"pm25\": " + n(s.getPm25()) + ",\n"
+                + "    \"pm10\": " + n(s.getPm10()) + ",\n"
+                + "    \"pir\": " + b(s.getPir()) + ",\n"
+                + "    \"ultrasonic\": " + n(s.getUltrasonic()) + "\n"
                 + "  },\n"
                 + "  \"audio\": {\n"
-                + "    \"last_stt\": \"" + q(s.lastStt) + "\",\n"
-                + "    \"last_stt_time\": " + s.lastSttTime + "\n"
+                + "    \"last_stt\": \"" + q(s.getLastStt()) + "\",\n"
+                + "    \"last_stt_time\": " + s.getLastSttTime() + "\n"
                 + "  }\n"
                 + "}";
     }

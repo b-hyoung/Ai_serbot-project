@@ -17,6 +17,7 @@ public class VisionClient {
     public VisionClient(String baseUrl) {
         this.baseUrl = baseUrl;
     }
+    
 
     public JsonObject infer(String absoluteImagePath, double conf) throws Exception {
         JsonObject req = new JsonObject();
@@ -24,9 +25,6 @@ public class VisionClient {
         req.addProperty("conf", conf);
 
         String bodyStr = req.toString();
-        System.out.println("🧠 YOLO URL = " + baseUrl + "/infer");
-        System.out.println("🧠 YOLO REQ BODY = " + bodyStr);
-
         Request request = new Request.Builder()
                 .url(baseUrl + "/infer")
                 .post(RequestBody.create(bodyStr, JSON))
@@ -42,4 +40,7 @@ public class VisionClient {
             return JsonParser.parseString(respBody).getAsJsonObject();
         }
     }
+
+    
+
 }

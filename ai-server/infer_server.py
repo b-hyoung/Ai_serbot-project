@@ -23,11 +23,7 @@ def health():
     return {"ok": True, "model": MODEL_PATH}
 
 @app.post("/infer")
-async def infer(req: Request, payload: InferReq):
-    raw = await req.body()
-    print("🧪 RAW BODY LEN =", len(raw))
-    print("🧪 RAW BODY =", raw[:200])
-    
+def infer(req: InferReq):
     p = Path(req.path)
     if not p.exists() or not p.is_file():
         return {"ok": False, "error": "file_not_found", "path": req.path}
