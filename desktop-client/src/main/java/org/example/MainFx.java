@@ -55,9 +55,25 @@ import javafx.scene.layout.Region;
  */
 public class MainFx extends Application {
 
+    // ===== DB 설정 유틸 =====
+    // 우선순위: JVM 시스템 프로퍼티(-DKEY=...) -> 환경변수(KEY) -> 기본값
+    private static String pick(String key, String fallback) {
+        String v = System.getProperty(key);
+        if (v != null && !v.isBlank()) return v;
+        v = System.getenv(key);
+        if (v != null && !v.isBlank()) return v;
+        return fallback;
+    }
+
     // --- 서버 연결 정보 ---
     private static final String SERVER_IP = "192.168.0.31";
     private static final int SERVER_PORT = 6001;
+
+    // JVM 옵션으로 덮어쓰기 가능: -DSERBOT_DB_URL=... -DSERBOT_DB_USER=... -DSERBOT_DB_PASS=...
+// 환경변수로도 가능: SERBOT_DB_URL / SERBOT_DB_USER / SERBOT_DB_PASS
+    private static String DB_URL  = pick("SERBOT_DB_URL",  "jdbc:mysql://localhost:3306/serbot?useSSL=false&serverTimezone=Asia/Seoul");
+    private static String DB_USER = pick("SERBOT_DB_USER", "root");
+    private static String DB_PASS = pick("SERBOT_DB_PASS", "");
 
     // --- 배경 이미지 경로 ---
     // 1) 리소스 우선: src/main/resources/desktop-client/startup_background.png
@@ -585,33 +601,83 @@ public class MainFx extends Application {
 
 
     // ==========================
-    // 7) BlackBox 새 창 열기 (기존 BlackBoxPanel 사용)
+    // 7) BlackBox 새 창 열기 (DB 재생)
     // ==========================
     private void openDbWindow() {
-        // 이미 만들어진 창이면 앞으로
-        if (blackBoxStage != null) {
-            if (!blackBoxStage.isShowing()) {
-                blackBoxStage.show();
-            }
-            blackBoxStage.toFront();
+        // 1) 세션 ID 입력
+        TextInputDialog dialog = new TextInputDialog("5");
+        dialog.setTitle("BlackBox DB 재생");
+        dialog.setHeaderText("재생할 video_session id를 입력하세요");
+        dialog.setContentText("session_id:");
+
+        var result = dialog.showAndWait();
+        if (result.isEmpty()) return;
+
+        long sessionId;
+        try {
+            sessionId = Long.parseLong(result.get().trim());
+            if (sessionId <= 0) throw new NumberFormatException();
+        } catch (Exception e) {
+            Alert a = new Alert(Alert.AlertType.ERROR);
+            a.setTitle("입력 오류");
+            a.setHeaderText(null);
+            a.setContentText("session_id는 1 이상의 숫자여야 합니다.");
+            a.showAndWait();
             return;
         }
 
-        // ✅ 기존 BlackBoxPanel 기본 생성자 사용 (이전 코드 스타일로 되돌림)
+        // 2) 이미 열려 있으면: 앞으로 + 세션만 다시 로드 시도
+        if (blackBoxStage != null && blackBoxPanel != null) {
+            if (!blackBoxStage.isShowing()) blackBoxStage.show();
+            blackBoxStage.toFront();
+            applyDbAndLoadSession(blackBoxPanel, sessionId);
+            return;
+        }
+
+        // 3) 새 창 생성
         blackBoxPanel = new BlackBoxPanel();
+        applyDbAndLoadSession(blackBoxPanel, sessionId);
 
         blackBoxStage = new Stage();
-        blackBoxStage.setTitle("BlackBox");
+        blackBoxStage.setTitle("BlackBox (DB Replay)");
         blackBoxStage.setScene(new Scene(blackBoxPanel.getView(), 1000, 700));
 
         // 창 닫히면 참조 정리(다시 열 수 있게)
         blackBoxStage.setOnHidden(e -> {
+            // BlackBoxPanel에 dispose()가 있으면 호출(스케줄러 정리)
+            try {
+                var m = blackBoxPanel.getClass().getMethod("dispose");
+                m.invoke(blackBoxPanel);
+            } catch (Exception ignored) {}
+
             blackBoxPanel = null;
             blackBoxStage = null;
         });
 
         blackBoxStage.show();
         blackBoxStage.toFront();
+    }
+
+    /**
+     * BlackBoxPanel에 DB 설정/세션 로드를 주입한다.
+     * - 메서드가 없으면(아직 구현 전) 조용히 스킵
+     */
+    private void applyDbAndLoadSession(BlackBoxPanel panel, long sessionId) {
+        // setDbConfig(String url, String user, String pass)
+        try {
+            var m = panel.getClass().getMethod("setDbConfig", String.class, String.class, String.class);
+            m.invoke(panel, DB_URL, DB_USER, DB_PASS);
+        } catch (Exception ignored) {
+            System.out.println("[BlackBox] setDbConfig() 없음 또는 호출 실패(스킵)");
+        }
+
+        // loadSessionFromDb(long sessionId)
+        try {
+            var m = panel.getClass().getMethod("loadSessionFromDb", long.class);
+            m.invoke(panel, sessionId);
+        } catch (Exception ignored) {
+            System.out.println("[BlackBox] loadSessionFromDb() 없음 또는 호출 실패(스킵)");
+        }
     }
 
     public static void main(String[] args) {

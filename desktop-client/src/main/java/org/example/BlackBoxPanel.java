@@ -5,6 +5,10 @@ import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+
+import java.io.ByteArrayInputStream;
 import javafx.scene.Scene;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
@@ -20,10 +24,20 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 기존 "Main extends Application"로 만들었던 블랙박스(위젯 오버레이) 화면을
@@ -58,6 +72,73 @@ public class BlackBoxPanel {
     private NumberAxis tempXAxis;
     private NumberAxis co2XAxis;
 
+    // ====== camera video view (추가: 기존 Camera 화면 위에 영상만 덮어씀) ======
+    private ImageView cameraImageView;
+    private VBox cameraPlaceholderBox;
+
+    // ====== DB playback (추가) ======
+    private boolean dbMode = false;
+
+    // DB connection (환경변수/시스템프로퍼티로 덮어쓰기 가능)
+    private static final String DB_URL = System.getProperty(
+            "SERBOT_DB_URL",
+            System.getenv().getOrDefault("SERBOT_DB_URL", "jdbc:mysql://localhost:3306/serbot?useSSL=false&serverTimezone=Asia/Seoul")
+    );
+    private static final String DB_USER = System.getProperty(
+            "SERBOT_DB_USER",
+            System.getenv().getOrDefault("SERBOT_DB_USER", "root")
+    );
+    private static final String DB_PASS = System.getProperty(
+            "SERBOT_DB_PASS",
+            System.getenv().getOrDefault("SERBOT_DB_PASS", "")
+    );
+    // 외부에서 주입 가능(없으면 환경변수/기본값 사용)
+    private String dbUrlOverride = null;
+    private String dbUserOverride = null;
+    private String dbPassOverride = null;
+
+    private volatile long currentSessionId = -1;
+    private volatile long sessionStartMs = 0;
+    private volatile int sessionFps = 5;
+    private volatile int sessionDurationSec = 300; // slider max 기본
+
+    private static final class DbFrame {
+        final long tsMs;
+        final int frameIndex;
+        final byte[] jpeg;
+        DbFrame(long tsMs, int frameIndex, byte[] jpeg) {
+            this.tsMs = tsMs;
+            this.frameIndex = frameIndex;
+            this.jpeg = jpeg;
+        }
+    }
+
+    private static final class DbSensor {
+        final long tsMs;
+        final boolean fire;
+        final double co2;
+        final double pm25;
+        final double pm10;
+        final Boolean pir;
+        DbSensor(long tsMs, boolean fire, double co2, double pm25, double pm10, Boolean pir) {
+            this.tsMs = tsMs;
+            this.fire = fire;
+            this.co2 = co2;
+            this.pm25 = pm25;
+            this.pm10 = pm10;
+            this.pir = pir;
+        }
+    }
+
+    private final List<DbFrame> frames = Collections.synchronizedList(new ArrayList<>());
+    private final List<DbSensor> sensors = Collections.synchronizedList(new ArrayList<>());
+
+    private volatile int framePtr = 0;
+    private volatile int sensorPtr = 0;
+
+    private final AtomicBoolean sliderIsDragging = new AtomicBoolean(false);
+    private final AtomicBoolean internalSliderUpdate = new AtomicBoolean(false);
+
     // ====== 뷰 루트(추가) ======
     private final StackPane root;
 
@@ -79,6 +160,8 @@ public class BlackBoxPanel {
 
         widgetsPanel = createWidgetsPanel();
         widgetsPanel.setTranslateY(-700); // Initially hidden above the screen
+        // 오버레이 패널 클릭/드래그 영역 안정화
+        widgetsPanel.setPickOnBounds(true);
 
         root = new StackPane();
         root.getChildren().addAll(mainContent, widgetsPanel);
@@ -154,10 +237,19 @@ public class BlackBoxPanel {
         cameraArea.setAlignment(Pos.CENTER);
         VBox.setVgrow(cameraArea, Priority.ALWAYS);
 
+        // Camera content
         VBox centerContent = new VBox(20);
         centerContent.setAlignment(Pos.CENTER);
         VBox.setVgrow(centerContent, Priority.ALWAYS);
 
+        // ✅ 영상이 들어올 자리(ImageView). 기본 화면은 유지하고, 영상만 겹쳐서 띄운다.
+        cameraImageView = new ImageView();
+        cameraImageView.setPreserveRatio(true);
+        cameraImageView.setSmooth(true);
+        cameraImageView.setFitWidth(1100);
+        cameraImageView.setFitHeight(600);
+
+        // ✅ 기존 "Camera" 플레이스홀더 UI (원본 유지)
         Label cameraIcon = new Label("📷");
         cameraIcon.setFont(Font.font(100));
 
@@ -169,12 +261,29 @@ public class BlackBoxPanel {
         subtitle.setFont(Font.font("Arial", 18));
         subtitle.setTextFill(Color.web("#9CA3AF"));
 
-        centerContent.getChildren().addAll(cameraIcon, cameraTitle, subtitle);
+        cameraPlaceholderBox = new VBox(20);
+        cameraPlaceholderBox.setAlignment(Pos.CENTER);
+        cameraPlaceholderBox.getChildren().addAll(cameraIcon, cameraTitle, subtitle);
 
+        // ✅ 겹치기: 영상 + 플레이스홀더
+        StackPane cameraStack = new StackPane();
+        cameraStack.setAlignment(Pos.CENTER);
+        cameraStack.getChildren().addAll(cameraImageView, cameraPlaceholderBox);
+
+        // 이미지가 없을 때만 플레이스홀더 보이게
+        cameraPlaceholderBox.setVisible(cameraImageView.getImage() == null);
+        cameraImageView.imageProperty().addListener((obs, oldImg, newImg) -> {
+            if (cameraPlaceholderBox != null) {
+                cameraPlaceholderBox.setVisible(newImg == null);
+            }
+        });
+
+        centerContent.getChildren().add(cameraStack);
+
+        // Video controls
         VBox controlsBox = createVideoControls();
 
         cameraArea.getChildren().addAll(centerContent, controlsBox);
-
         return cameraArea;
     }
 
@@ -197,11 +306,24 @@ public class BlackBoxPanel {
             int mins = videoTime / 60;
             int secs = videoTime % 60;
             timeLabel.setText(String.format("%d:%02d", mins, secs));
+
+            // ✅ DB 모드: 슬라이더 값(초) = 해당 시점 프레임 보여주기
+            if (dbMode && !internalSliderUpdate.get() && !sliderIsDragging.get()) {
+                showFrameBySecond(videoTime);
+            }
         });
 
         videoSlider.setOnMousePressed(e -> {
+            sliderIsDragging.set(true);
             if (isPlaying) {
                 togglePlayPause();
+            }
+        });
+
+        videoSlider.setOnMouseReleased(e -> {
+            sliderIsDragging.set(false);
+            if (dbMode) {
+                showFrameBySecond((int) videoSlider.getValue());
             }
         });
 
@@ -418,7 +540,7 @@ public class BlackBoxPanel {
 
     private void startDataUpdates() {
         dataScheduler.scheduleAtFixedRate(() -> Platform.runLater(() -> {
-            if (isPlaying) {
+            if (isPlaying && !dbMode) {
                 currentTemp += (random.nextDouble() - 0.5) * 2;
                 currentTemp = Math.max(18, Math.min(32, currentTemp));
 
@@ -472,17 +594,300 @@ public class BlackBoxPanel {
 
     private void startVideoTimer() {
         videoScheduler.scheduleAtFixedRate(() -> Platform.runLater(() -> {
-            if (isPlaying) {
+            if (!isPlaying) return;
+
+            if (!dbMode) {
                 videoTime++;
                 if (videoTime > 300) videoTime = 0;
                 if (videoSlider != null) {
-                    videoSlider.setValue(videoTime);
+                    internalSliderUpdate.set(true);
+                    try { videoSlider.setValue(videoTime); } finally { internalSliderUpdate.set(false); }
                 }
+                return;
             }
-        }), 0, 1, TimeUnit.SECONDS);
+
+            // DB mode: 프레임 단위 재생
+            if (frames.isEmpty()) return;
+            int nextIdx = Math.min(framePtr + 1, frames.size() - 1);
+            showFrameAt(nextIdx);
+
+        }), 0, 200, TimeUnit.MILLISECONDS); // 5fps 기본 틱
     }
 
     // ====== 외부 제어용(필요하면 MainFx에서 사용) ======
+
+    // ====================== DB 재생 API ======================
+
+    /**
+     * DB의 특정 video_session을 로드해서 재생 준비한다.
+     * - UI 구조는 유지, 카메라 영역에 DB 프레임을 넣어준다.
+     */
+    public void loadDbSession(long sessionId) {
+        pause();
+
+        this.dbMode = true;
+        this.currentSessionId = sessionId;
+        this.framePtr = 0;
+        this.sensorPtr = 0;
+        this.timeCounter = 0;
+
+        frames.clear();
+        sensors.clear();
+
+        new Thread(() -> {
+            try {
+                loadSessionMeta(sessionId);
+                loadFrames(sessionId);
+                loadSensorsForSessionWindow();
+
+                Platform.runLater(() -> {
+                    if (videoSlider != null) {
+                        internalSliderUpdate.set(true);
+                        try {
+                            videoSlider.setMin(0);
+                            videoSlider.setMax(sessionDurationSec);
+                            videoSlider.setValue(0);
+                        } finally {
+                            internalSliderUpdate.set(false);
+                        }
+                    }
+                    showFrameAt(0);
+                });
+
+            } catch (Exception e) {
+                System.out.println("⚠ loadDbSession failed: " + e.getMessage());
+            }
+        }, "DB-Loader").start();
+    }
+
+    /** DB 모드를 끄고(실시간/데모 모드로) 되돌린다. */
+    public void disableDbMode() {
+        pause();
+        dbMode = false;
+        currentSessionId = -1;
+        clearCameraImage();
+
+        timeCounter = 0;
+        if (tempSeries != null) tempSeries.getData().clear();
+        if (co2Series != null) co2Series.getData().clear();
+    }
+
+    private Connection openDb() throws SQLException {
+        String url = (dbUrlOverride != null) ? dbUrlOverride : DB_URL;
+        String user = (dbUserOverride != null) ? dbUserOverride : DB_USER;
+        String pass = (dbPassOverride != null) ? dbPassOverride : DB_PASS;
+        return DriverManager.getConnection(url, user, pass);
+    }
+
+    private void loadSessionMeta(long sessionId) throws SQLException {
+        String sql = "SELECT started_at_ms, ended_at_ms, fps FROM video_session WHERE id=?";
+        try (Connection c = openDb(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, sessionId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) throw new SQLException("video_session not found: id=" + sessionId);
+                sessionStartMs = rs.getLong("started_at_ms");
+                sessionFps = rs.getInt("fps");
+
+                long ended = rs.getLong("ended_at_ms");
+                boolean endedIsNull = rs.wasNull();
+
+                sessionDurationSec = 300;
+                if (!endedIsNull && ended > sessionStartMs) {
+                    sessionDurationSec = (int) Math.max(1, (ended - sessionStartMs) / 1000L);
+                }
+            }
+        }
+    }
+
+    private void loadFrames(long sessionId) throws SQLException {
+        String sql = "SELECT frame_index, received_at_ms, jpeg_bytes FROM video_frame WHERE session_id=? ORDER BY frame_index ASC";
+        try (Connection c = openDb(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, sessionId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int idx = rs.getInt("frame_index");
+                    long ts = rs.getLong("received_at_ms");
+                    byte[] jpeg = rs.getBytes("jpeg_bytes");
+                    frames.add(new DbFrame(ts, idx, jpeg));
+                }
+            }
+        }
+
+        if (!frames.isEmpty()) {
+            long endTs = frames.get(frames.size() - 1).tsMs;
+            if (endTs > sessionStartMs) {
+                sessionDurationSec = (int) Math.max(sessionDurationSec, (endTs - sessionStartMs) / 1000L);
+            }
+        }
+
+        System.out.println("✅ loaded frames: " + frames.size() + " (session=" + sessionId + ")");
+    }
+
+    private void loadSensorsForSessionWindow() throws SQLException {
+        long start = sessionStartMs;
+        long end;
+        if (!frames.isEmpty()) end = frames.get(frames.size() - 1).tsMs;
+        else end = sessionStartMs + (long) sessionDurationSec * 1000L;
+
+        String sql = "SELECT received_at_ms, fire, co2, pm25, pm10, pir FROM sensor_snapshot WHERE received_at_ms BETWEEN ? AND ? ORDER BY received_at_ms ASC";
+        try (Connection c = openDb(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, start);
+            ps.setLong(2, end);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    long ts = rs.getLong("received_at_ms");
+                    boolean fire = rs.getInt("fire") == 1;
+                    double co2 = rs.getDouble("co2");
+                    double pm25 = rs.getDouble("pm25");
+                    double pm10 = rs.getDouble("pm10");
+
+                    int pirInt = rs.getInt("pir");
+                    Boolean pir = rs.wasNull() ? null : (pirInt == 1);
+
+                    sensors.add(new DbSensor(ts, fire, co2, pm25, pm10, pir));
+                }
+            }
+        }
+        System.out.println("✅ loaded sensors: " + sensors.size());
+    }
+
+    private void showFrameBySecond(int sec) {
+        if (!dbMode) return;
+        if (frames.isEmpty()) return;
+
+        long targetTs = sessionStartMs + (long) sec * 1000L;
+
+        int bestIdx = 0;
+        synchronized (frames) {
+            for (int i = 0; i < frames.size(); i++) {
+                if (frames.get(i).tsMs <= targetTs) bestIdx = i;
+                else break;
+            }
+        }
+        showFrameAt(bestIdx);
+    }
+
+    /** frames 리스트의 인덱스(0-based) 기준으로 화면 표시 */
+    private void showFrameAt(int frameIndex0Based) {
+        if (!dbMode) return;
+        DbFrame f;
+        synchronized (frames) {
+            if (frames.isEmpty()) return;
+            int idx = Math.max(0, Math.min(frameIndex0Based, frames.size() - 1));
+            f = frames.get(idx);
+            framePtr = idx;
+        }
+
+        if (f.jpeg != null && f.jpeg.length > 0) {
+            showCameraJpeg(f.jpeg);
+        }
+
+        advanceSensorTo(f.tsMs);
+
+        long elapsedMs = Math.max(0, f.tsMs - sessionStartMs);
+        int sec = (int) (elapsedMs / 1000L);
+        videoTime = sec;
+
+        int mins = sec / 60;
+        int secs = sec % 60;
+        if (timeLabel != null) timeLabel.setText(String.format("%d:%02d", mins, secs));
+
+        if (videoSlider != null) {
+            internalSliderUpdate.set(true);
+            try { videoSlider.setValue(sec); } finally { internalSliderUpdate.set(false); }
+        }
+    }
+
+    private void advanceSensorTo(long targetTsMs) {
+        if (!dbMode) return;
+
+        DbSensor last = null;
+        synchronized (sensors) {
+            while (sensorPtr < sensors.size() && sensors.get(sensorPtr).tsMs <= targetTsMs) {
+                last = sensors.get(sensorPtr);
+                sensorPtr++;
+            }
+        }
+        if (last == null) return;
+
+        currentTemp = last.pm25; // temp 컬럼이 없어서 pm25 대체
+        currentCO2 = last.co2;
+
+        if (tempValueLabel != null) {
+            tempValueLabel.setText(String.format("PM2.5 %.1f", currentTemp));
+        }
+        if (co2ValueLabel != null) {
+            co2ValueLabel.setText(String.format("%.0f ppm", currentCO2));
+        }
+
+        if (tempSeries != null) {
+            tempSeries.getData().add(new XYChart.Data<>(timeCounter, currentTemp));
+            if (tempSeries.getData().size() > MAX_DATA_POINTS) tempSeries.getData().remove(0);
+        }
+        if (co2Series != null) {
+            co2Series.getData().add(new XYChart.Data<>(timeCounter, currentCO2));
+            if (co2Series.getData().size() > MAX_DATA_POINTS) co2Series.getData().remove(0);
+        }
+
+        if (timeCounter >= MAX_DATA_POINTS) {
+            tempXAxis.setLowerBound(timeCounter - MAX_DATA_POINTS + 1);
+            tempXAxis.setUpperBound(timeCounter);
+            co2XAxis.setLowerBound(timeCounter - MAX_DATA_POINTS + 1);
+            co2XAxis.setUpperBound(timeCounter);
+        }
+        timeCounter++;
+    }
+
+    /**
+     * 소켓/DB에서 받은 JPEG 바이트를 카메라 영역에 표시한다.
+     * - 기존 Camera 플레이스홀더 UI는 유지하고, 프레임이 들어오면 자동으로 영상이 올라간다.
+     */
+    public void showCameraJpeg(byte[] jpegBytes) {
+        if (jpegBytes == null || jpegBytes.length == 0) return;
+        Platform.runLater(() -> {
+            try {
+                if (cameraImageView == null) return;
+                Image img = new Image(new ByteArrayInputStream(jpegBytes));
+                cameraImageView.setImage(img);
+                if (cameraPlaceholderBox != null) cameraPlaceholderBox.setVisible(false);
+            } catch (Exception e) {
+                System.out.println("⚠ showCameraJpeg failed: " + e.getMessage());
+            }
+        });
+    }
+
+    /** 프레임이 없을 때 다시 기본 Camera 화면만 보이게 하고 싶으면 호출 */
+    public void clearCameraImage() {
+        Platform.runLater(() -> {
+            if (cameraImageView != null) cameraImageView.setImage(null);
+            if (cameraPlaceholderBox != null) cameraPlaceholderBox.setVisible(true);
+        });
+    }
+
+    // ====================== MainFx 호환 API ======================
+
+    /**
+     * MainFx에서 호출하는 호환 API.
+     * - url/user/pass가 null/blank면 기존 환경변수/기본값(DB_URL/DB_USER/DB_PASS)을 사용한다.
+     */
+    public void setDbConfig(String url, String user, String pass) {
+        this.dbUrlOverride = (url == null || url.isBlank()) ? null : url;
+        this.dbUserOverride = (user == null || user.isBlank()) ? null : user;
+        this.dbPassOverride = (pass == null) ? null : pass;
+        System.out.println("✅ [BlackBox] DB config set (override=" + (this.dbUrlOverride != null) + ")");
+    }
+
+    /**
+     * MainFx에서 호출하는 호환 API.
+     * 내부적으로 loadDbSession(sessionId)를 호출한다.
+     */
+    public void loadSessionFromDb(long sessionId) {
+        try {
+            loadDbSession(sessionId);
+        } catch (Exception e) {
+            System.out.println("⚠ [BlackBox] loadSessionFromDb failed: " + e.getMessage());
+        }
+    }
 
     public void play() {
         if (!isPlaying) togglePlayPause();
