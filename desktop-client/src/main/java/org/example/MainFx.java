@@ -11,10 +11,7 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.TitledPane;
-import javafx.scene.control.TextArea;
+import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
@@ -58,10 +55,10 @@ public class MainFx extends Application {
     private static final int SERVER_PORT = 6001;
 
     // --- 배경 이미지 경로 ---
-    // 1) 리소스 우선: src/main/resources/startup_background.png
-    private static final String BG_RESOURCE_PATH = "C:\\Users\\mikoP\\Documents\\GitHub\\Ai_serbot-project\\desktop-client\\startup_background.png";
+    // 1) 리소스 우선: src/main/resources/desktop-client/startup_background.png
+    private static final String BG_RESOURCE_PATH = "desktop-client/startup_background.png";
     // 2) 폴백: 작업 디렉토리에 startup_background.png가 있을 때
-    private static final String BG_FILE_FALLBACK = "file:C:\\Users\\mikoP\\Documents\\GitHub\\Ai_serbot-project\\desktop-client\\startup_background.png";
+    private static final String BG_FILE_FALLBACK = "file:desktop-client/startup_background.png";
 
     // --- 네트워크 ---
     private Socket socket;
@@ -96,8 +93,14 @@ public class MainFx extends Application {
     private TextArea sttTextArea;
     private LineChartWithApi dustChart;
 
+    // --- DB 창 관련 ---
+    private Stage primaryStage;  // 메인 스테이지 참조
+    private Stage dbStage;       // DB 탭이 들어 있는 별도 스테이지
+
     @Override
     public void start(Stage stage) {
+        this.primaryStage = stage;
+
         root = new StackPane();
 
         introView = buildIntroView();
@@ -205,7 +208,7 @@ public class MainFx extends Application {
         BorderPane content = new BorderPane();
         content.setPadding(new Insets(10));
 
-        // ---- 중앙: (PIR 패널) + (Camera 패널) ----
+        // ---- 중앙: (PIR 패널) + (Camera 패널) + (DB 버튼) ----
         // PIR 패널(카메라 위 별도)
         lblPirPanel = new Label("인체 감지: -");
         lblPirPanel.setStyle(
@@ -232,7 +235,16 @@ public class MainFx extends Application {
         TitledPane cameraPane = new TitledPane("Camera", cameraWrapper);
         cameraPane.setCollapsible(false);
 
-        VBox centerBox = new VBox(10, pirPane, cameraPane);
+        // === 여기서 DB 버튼 추가 ===
+        Button dbButton = new Button("DB");
+        dbButton.setPrefWidth(60);
+        dbButton.setOnAction(e -> openDbWindow());
+
+        HBox dbButtonBox = new HBox(dbButton);
+        dbButtonBox.setAlignment(Pos.CENTER_RIGHT);
+        dbButtonBox.setPadding(new Insets(4, 0, 0, 0));
+
+        VBox centerBox = new VBox(10, pirPane, cameraPane, dbButtonBox);
         VBox.setVgrow(cameraPane, Priority.ALWAYS);
         content.setCenter(centerBox);
 
@@ -295,7 +307,6 @@ public class MainFx extends Application {
         rightBox.getChildren().addAll(lidarPane, sttPane, dustPane);
         VBox.setVgrow(lidarPane, Priority.ALWAYS);
         VBox.setVgrow(sttPane, Priority.ALWAYS);
-        // dustPane는 고정 높이(차트 높이)로
 
         content.setRight(rightBox);
 
@@ -538,9 +549,37 @@ public class MainFx extends Application {
         String json = String.format("{\"type\":\"KEY\",\"cmd\":\"%s\"}", cmd);
         out.println(json);
         System.out.println("보냄: " + json);
+    }
 
-        // mock 데이터 전송은 요청에 따라 주석 처리
-        // if (code == KeyCode.F5) { ... }
+    // ==========================
+    // 7) DB 창 열기
+    // ==========================
+    private void openDbWindow() {
+        if (dbStage == null) {
+            dbStage = new Stage();
+            dbStage.setTitle("J-SafeGuard DB");
+
+            if (primaryStage != null) {
+                dbStage.initOwner(primaryStage);
+            }
+
+            TabPane tabPane = new TabPane();
+            Tab dbTab = new Tab("DB");
+            dbTab.setClosable(false);
+
+            BorderPane dbRoot = new BorderPane();
+            dbRoot.setPadding(new Insets(10));
+            // TODO: DB기능 - 추후 DB 관련 UI 컴포넌트를 이 BorderPane 내부에 추가
+
+            dbTab.setContent(dbRoot);
+            tabPane.getTabs().add(dbTab);
+
+            Scene scene = new Scene(tabPane, 800, 600);
+            dbStage.setScene(scene);
+        }
+
+        dbStage.show();
+        dbStage.toFront();
     }
 
     public static void main(String[] args) {
