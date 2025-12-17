@@ -36,7 +36,8 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 
-import javax.swing.plaf.synth.Region;
+import javafx.scene.Node;
+import javafx.scene.layout.Region;
 
 /**
  * JavaFX 기반 관제 UI
@@ -97,15 +98,12 @@ public class MainFx extends Application {
     private TextArea sttTextArea;
     private LineChartWithApi dustChart;
 
-    // --- DB 창 관련 ---
-    private Stage primaryStage; // 메인 스테이지 참조
-    private Stage dbStage; // DB 탭이 들어 있는 별도 스테이지
+    // --- BlackBox (새 창으로 띄우기) ---
+    private Stage blackBoxStage;
     private BlackBoxPanel blackBoxPanel;
 
     @Override
     public void start(Stage stage) {
-        this.primaryStage = stage;
-
         root = new StackPane();
 
         introView = buildIntroView();
@@ -319,7 +317,7 @@ public class MainFx extends Application {
         return mainRoot;
     }
 
-    private Region wrapCard(Region node) {
+    private Region wrapCard(Node node) {
         VBox box = new VBox(node);
         box.setPadding(new Insets(8));
         box.setStyle("-fx-background-color: rgba(0,0,0,0.10); -fx-background-radius: 10;");
@@ -585,38 +583,35 @@ public class MainFx extends Application {
         System.out.println("보냄: " + json);
     }
 
+
     // ==========================
-    // 7) DB 창 열기
+    // 7) BlackBox 새 창 열기 (기존 BlackBoxPanel 사용)
     // ==========================
     private void openDbWindow() {
-        if (dbStage == null) {
-            dbStage = new Stage();
-            dbStage.setTitle("J-SafeGuard DB");
-
-            if (primaryStage != null) {
-                dbStage.initOwner(primaryStage);
+        // 이미 만들어진 창이면 앞으로
+        if (blackBoxStage != null) {
+            if (!blackBoxStage.isShowing()) {
+                blackBoxStage.show();
             }
-
-            TabPane tabPane = new TabPane();
-            Tab dbTab = new Tab("BlackBox");
-            dbTab.setClosable(false);
-
-            BorderPane dbRoot = new BorderPane();
-            dbRoot.setPadding(new Insets(10));
-
-            // 🔥 BlackBoxPanel 연결
-            blackBoxPanel = new BlackBoxPanel();
-            dbRoot.setCenter(blackBoxPanel.getView());
-
-            dbTab.setContent(dbRoot);
-            tabPane.getTabs().add(dbTab);
-
-            Scene scene = new Scene(tabPane, 1000, 700);
-            dbStage.setScene(scene);
+            blackBoxStage.toFront();
+            return;
         }
 
-        dbStage.show();
-        dbStage.toFront();
+        // ✅ 기존 BlackBoxPanel 기본 생성자 사용 (이전 코드 스타일로 되돌림)
+        blackBoxPanel = new BlackBoxPanel();
+
+        blackBoxStage = new Stage();
+        blackBoxStage.setTitle("BlackBox");
+        blackBoxStage.setScene(new Scene(blackBoxPanel.getView(), 1000, 700));
+
+        // 창 닫히면 참조 정리(다시 열 수 있게)
+        blackBoxStage.setOnHidden(e -> {
+            blackBoxPanel = null;
+            blackBoxStage = null;
+        });
+
+        blackBoxStage.show();
+        blackBoxStage.toFront();
     }
 
     public static void main(String[] args) {
