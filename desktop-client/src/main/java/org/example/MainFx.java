@@ -82,20 +82,20 @@ public class MainFx extends Application {
     }
 
     // --- 서버 연결 정보 ---
-    private static final String SERVER_IP = "192.168.0.31";
+    private static final String SERVER_IP = "192.168.0.33";
     private static final int SERVER_PORT = 6001;
 
     // JVM 옵션으로 덮어쓰기 가능: -DSERBOT_DB_URL=... -DSERBOT_DB_USER=... -DSERBOT_DB_PASS=...
     // 환경변수로도 가능: SERBOT_DB_URL / SERBOT_DB_USER / SERBOT_DB_PASS
     private static String DB_URL  = pick("SERBOT_DB_URL",  "jdbc:mysql://localhost:3306/serbot?useSSL=false&serverTimezone=Asia/Seoul");
     private static String DB_USER = pick("SERBOT_DB_USER", "root");
-    private static String DB_PASS = pick("SERBOT_DB_PASS", "");
+    private static String DB_PASS = pick("SERBOT_DB_PASS", "4113");
 
     // --- 배경 이미지 경로 ---
     // 1) 리소스 우선: src/main/resources/desktop-client/startup_background.png
     private static final String BG_RESOURCE_PATH = "desktop-client\\startup_background.png";
     // 2) 폴백: 작업 디렉토리에 startup_background.png가 있을 때
-    private static final String BG_FILE_FALLBACK = "file:startup_background.png";
+    private static final String BG_FILE_FALLBACK = "file:desktop-client/startup_background.png";
 
     // --- 네트워크 ---
     private Socket socket;
