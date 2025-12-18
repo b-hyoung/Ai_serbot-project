@@ -298,7 +298,7 @@ public class MainFx extends Application {
         TitledPane cameraPane = new TitledPane("Camera", cameraWrapper);
         cameraPane.setCollapsible(false);
 
-        // === 여기서 DB 버튼 추가 ===
+        // === DB 버튼 ===
         Button dbButton = new Button("DB");
         dbButton.setPrefWidth(60);
         dbButton.setOnAction(e -> openDbWindow());
@@ -350,7 +350,7 @@ public class MainFx extends Application {
         rightBox.setStyle("-fx-background-color: rgba(255,255,255,0.78); -fx-background-radius: 12;");
 
         lidarView = new LidarView();
-        TitledPane lidarPane = new TitledPane("LiDAR SLAM Map", lidarView);
+        TitledPane lidarPane = new TitledPane("LiDAR (Latest Scan, Robot Centered)", lidarView);
         lidarPane.setCollapsible(false);
 
         sttTextArea = new TextArea();
@@ -850,55 +850,44 @@ class LidarPoint {
     }
 }
 
+/**
+ * LiDAR 뷰 (로봇 고정, 최신 스캔 1프레임만 표시)
+ *  - 로봇은 항상 화면 중앙 빨간 점
+ *  - 서버에서 받은 local 좌표(points)만 사용
+ *  - robotX / robotY / robotTheta 는 인터페이스 맞추기용으로만 받고 무시
+ *  - zoomFactor 는 LB/RB 패드 입력으로 조절
+ */
 class LidarView extends Canvas {
 
     private final Object lock = new Object();
 
-    private final List<LidarPoint> globalPoints = new ArrayList<>();
-    private List<LidarPoint> lastScanGlobal = new ArrayList<>();
+    // 최신 스캔 (로봇 기준 local 좌표)
+    private List<LidarPoint> latestScanLocal = new ArrayList<>();
 
-    private double robotX = 0.0;
-    private double robotY = 0.0;
-    private double robotTheta = 0.0;
-
+    // 줌 배율 (LB/RB 로 조절)
     double zoomFactor = 1.0;
-    private static final int MAX_POINTS = 20000;
 
     public LidarView() {
         setWidth(360);
         setHeight(280);
 
+        // 리사이즈 시 다시 그리기
         widthProperty().addListener((obs, ov, nv) -> draw());
         heightProperty().addListener((obs, ov, nv) -> draw());
     }
 
+    /**
+     * 서버에서 받은 LiDAR 스캔 추가
+     * - localPoints : 로봇 기준 (x,y)
+     * - robotX/Y/Theta 는 현재 뷰에서는 사용하지 않음 (인터페이스 유지용)
+     */
     public void addScan(List<LidarPoint> localPoints,
                         double robotX,
                         double robotY,
                         double robotTheta) {
         synchronized (lock) {
-            this.robotX = robotX;
-            this.robotY = robotY;
-            this.robotTheta = robotTheta;
-
-            double cos = Math.cos(robotTheta);
-            double sin = Math.sin(robotTheta);
-
-            List<LidarPoint> newGlobal = new ArrayList<>(localPoints.size());
-            for (LidarPoint lp : localPoints) {
-                double gx = robotX + (lp.x * cos - lp.y * sin);
-                double gy = robotY + (lp.x * sin + lp.y * cos);
-                LidarPoint gp = new LidarPoint(gx, gy);
-                globalPoints.add(gp);
-                newGlobal.add(gp);
-            }
-
-            if (globalPoints.size() > MAX_POINTS) {
-                int removeCount = globalPoints.size() - MAX_POINTS;
-                globalPoints.subList(0, removeCount).clear();
-            }
-
-            lastScanGlobal = newGlobal;
+            // 항상 "마지막 스캔"만 보관
+            latestScanLocal = new ArrayList<>(localPoints);
         }
         draw();
     }
@@ -918,23 +907,19 @@ class LidarView extends Canvas {
         double w = getWidth();
         double h = getHeight();
 
+        // 배경 지우기
         g2.setFill(Color.BLACK);
         g2.fillRect(0, 0, w, h);
 
-        List<LidarPoint> globalSnapshot;
-        List<LidarPoint> lastScanSnapshot;
-        double rX, rY, rTheta, zf;
+        List<LidarPoint> scanSnapshot;
+        double zf;
 
         synchronized (lock) {
-            globalSnapshot = new ArrayList<>(globalPoints);
-            lastScanSnapshot = new ArrayList<>(lastScanGlobal);
-            rX = robotX;
-            rY = robotY;
-            rTheta = robotTheta;
+            scanSnapshot = new ArrayList<>(latestScanLocal);
             zf = zoomFactor;
         }
 
-        if (globalSnapshot.isEmpty()) {
+        if (scanSnapshot.isEmpty()) {
             g2.setFill(Color.GRAY);
             g2.fillText("LiDAR 데이터 대기중...", 10, 20);
             return;
@@ -944,34 +929,27 @@ class LidarView extends Canvas {
         double centerX = w / 2.0;
         double centerY = h / 2.0;
 
-        double minDX = 0, maxDX = 0, minDY = 0, maxDY = 0;
+        // 스캔 점들의 범위를 이용해 자동 스케일 계산 (local 좌표 기준)
+        double minX = 0, maxX = 0, minY = 0, maxY = 0;
         boolean first = true;
-        for (LidarPoint p : globalSnapshot) {
-            double dx = p.x - rX;
-            double dy = p.y - rY;
+        for (LidarPoint p : scanSnapshot) {
             if (first) {
-                minDX = maxDX = dx;
-                minDY = maxDY = dy;
+                minX = maxX = p.x;
+                minY = maxY = p.y;
                 first = false;
             } else {
-                if (dx < minDX)
-                    minDX = dx;
-                if (dx > maxDX)
-                    maxDX = dx;
-                if (dy < minDY)
-                    minDY = dy;
-                if (dy > maxDY)
-                    maxDY = dy;
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
             }
         }
 
         double margin = 0.1;
-        double worldW = (maxDX - minDX);
-        double worldH = (maxDY - minDY);
-        if (worldW == 0)
-            worldW = 1;
-        if (worldH == 0)
-            worldH = 1;
+        double worldW = (maxX - minX);
+        double worldH = (maxY - minY);
+        if (worldW == 0) worldW = 1;
+        if (worldH == 0) worldH = 1;
         worldW *= (1.0 + margin);
         worldH *= (1.0 + margin);
 
@@ -982,44 +960,36 @@ class LidarView extends Canvas {
 
         int pointSize = 2;
 
-        g2.setFill(Color.rgb(0, 160, 0));
-        for (LidarPoint p : globalSnapshot) {
-            double dx = p.x - rX;
-            double dy = p.y - rY;
-            double sx = centerX + dx * scale;
-            double sy = centerY - dy * scale;
-            g2.fillOval(sx - pointSize / 2.0, sy - pointSize / 2.0, pointSize, pointSize);
-        }
-
+        // 1) 최신 스캔 점 (로봇 기준 local 좌표) – 연두색
         g2.setFill(Color.LIME);
-        for (LidarPoint p : lastScanSnapshot) {
-            double dx = p.x - rX;
-            double dy = p.y - rY;
-            double sx = centerX + dx * scale;
-            double sy = centerY - dy * scale;
-            g2.fillOval(sx - pointSize, sy - pointSize, pointSize * 2, pointSize * 2);
+        for (LidarPoint p : scanSnapshot) {
+            double sx = centerX + p.x * scale;
+            double sy = centerY - p.y * scale; // y 반전 (화면 좌표계)
+
+            g2.fillOval(
+                    sx - pointSize,
+                    sy - pointSize,
+                    pointSize * 2,
+                    pointSize * 2
+            );
         }
 
+        // 2) 로봇 위치 (항상 중앙 빨간 점)
         double robotSX = centerX;
         double robotSY = centerY;
-
-        int rPix = 8;
+        int rPix = 6;
         g2.setFill(Color.RED);
         g2.fillOval(robotSX - rPix, robotSY - rPix, rPix * 2, rPix * 2);
 
-        double arrowLen = 25;
-        double hx = robotSX + Math.cos(rTheta) * arrowLen;
-        double hy = robotSY - Math.sin(rTheta) * arrowLen;
-
-        g2.setStroke(Color.YELLOW);
-        g2.setLineWidth(2);
-        g2.strokeLine(robotSX, robotSY, hx, hy);
-
+        // 3) 외곽 박스
         g2.setStroke(Color.DARKGRAY);
+        g2.setLineWidth(1.0);
         g2.strokeRect(padding, padding, w - 2 * padding, h - 2 * padding);
 
+        // 4) 현재 줌 배율 표시
         g2.setFill(Color.WHITE);
-        g2.fillText(String.format(Locale.US, "Zoom: x%.2f", zf), padding + 5, h - padding - 5);
+        g2.fillText(String.format(Locale.US, "Zoom: x%.2f", zf),
+                padding + 5, h - padding - 5);
     }
 }
 
