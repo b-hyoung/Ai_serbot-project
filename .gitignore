@@ -1,0 +1,40 @@
+# --- JAVA & IntelliJ ---
+.idea/
+*.iml
+out/
+build/
+.gradle/
+target/
+bin/
+target/
+*.class
+# --- Python & ROS ---
+__pycache__/
+*.pyc
+/robot-ws/build/
+/robot-ws/install/
+/robot-ws/log/
+ai-server/.venv
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+.env
+
+yolov8n.pt
+data/
+
+# Java / Gradle build outputs
+**/bin/
+**/build/
+**/*.class
+
+# IntelliJ / Eclipse
+**/.idea/
+**/*.iml
+**/.project
+**/.classpath
+**/.settings/
+
+# macOS
+.DS_Store
