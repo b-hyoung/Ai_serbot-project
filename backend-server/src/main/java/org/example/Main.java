@@ -14,6 +14,7 @@ import org.example.state.SensorState;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class Main {
@@ -30,10 +31,11 @@ public class Main {
 
         // ✅ LLM 루프 제어 상태는 SensorState에 두지 말고 Main에서 관리 (시연용 안정)
         AtomicLong lastLlmCallAtMs = new AtomicLong(0);
+        AtomicBoolean manualLlmTriggered = new AtomicBoolean(false);
 
         // ====== 로봇 및 GUI 서버 ======
         RobotSocketService robotServer = new RobotSocketService(state);
-        GUISocketService guiServer = new GUISocketService(robotServer);
+        GUISocketService guiServer = new GUISocketService(robotServer, manualLlmTriggered);
 
         robotServer.setGuiService(guiServer);
 
@@ -63,17 +65,28 @@ public class Main {
 
         exec.scheduleAtFixedRate(() -> {
             try {
-                boolean hasHumanLikeSpeech =
-                        state.getLastStt() != null && !state.getLastStt().isBlank();
-
                 boolean visionPerson = Boolean.TRUE.equals(state.getVisionPerson());
 
-                // 사람 감지 안되면 스킵
-                if (!visionPerson) return;
+                // ====== ✅ GUI로 사람 탐지 상태 전송 ======
+                JsonObject personStatus = new JsonObject();
+                personStatus.addProperty("type", "PERSON_STATUS");
+                personStatus.addProperty("detected", visionPerson);
+                guiServer.sendToGui(personStatus.toString());
+                // ==========================================
 
-                // 쿨다운 60초
-                long now = System.currentTimeMillis();
-                if (now - lastLlmCallAtMs.get() < 60_000) return;
+                // Check for manual trigger
+                boolean manualTrigger = manualLlmTriggered.getAndSet(false);
+
+                // LLM Trigger: মানুষ সনাক্ত এবং ম্যানুয়াল ট্রিগার উভয়ই সত্য হতে হবে
+                if (!visionPerson || !manualTrigger) {
+                    return;
+                }
+
+                // LLM call proceeds if both are true
+                System.out.println("🔥 LLM Triggered by Vision & Manual Key!");
+
+                boolean hasHumanLikeSpeech =
+                        state.getLastStt() != null && !state.getLastStt().isBlank();
 
                 // phase (임시 규칙)
                 PromptBuilder.Phase phase =
@@ -93,9 +106,6 @@ public class Main {
                         survivorUnconscious
                 );
 
-                // 중복 호출 방지
-                lastLlmCallAtMs.set(now);
-
                 // LLM 호출
                 String raw = AgentService.ask(prompt);
                 System.out.println("🧠 LLM RAW:\n" + raw);
@@ -111,6 +121,7 @@ public class Main {
 
                 String survivorSpeech = jstr(obj, "survivor_speech");
                 String guiMessage     = jstr(obj, "gui_message");
+                String voiceInstruction = jstr(obj, "voice_instruction"); // Extract voice instruction
 
                 // ====== 로봇으로 전송 (6000) ======
                 if (!survivorSpeech.isBlank()) {
@@ -126,6 +137,14 @@ public class Main {
                     toGui.addProperty("type", "GUI_MESSAGE");
                     toGui.addProperty("text", guiMessage);
                     guiServer.sendToGui(toGui.toString());
+                }
+
+                // NEW: Also send voice instruction to GUI
+                if (!voiceInstruction.isBlank()) {
+                    JsonObject toGuiVoice = new JsonObject();
+                    toGuiVoice.addProperty("type", "VOICE_INSTRUCTION"); // New type for GUI
+                    toGuiVoice.addProperty("text", voiceInstruction);
+                    guiServer.sendToGui(toGuiVoice.toString());
                 }
 
             } catch (Exception e) {

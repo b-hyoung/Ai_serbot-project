@@ -38,6 +38,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 
 /**
  * 기존 "Main extends Application"로 만들었던 블랙박스(위젯 오버레이) 화면을
@@ -51,11 +53,54 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class BlackBoxPanel {
 
+    // ===== DB 재생용 세션 정보 DTO =====
+    public static class VideoSession {
+        final long id;
+        final long startedAtMs;
+
+        VideoSession(long id, long startedAtMs) {
+            this.id = id;
+            this.startedAtMs = startedAtMs;
+        }
+
+        @Override
+        public String toString() {
+            // Format the timestamp for display
+            Timestamp ts = new Timestamp(startedAtMs);
+            String formattedTime = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(ts);
+            return String.format("Session %d (%s)", id, formattedTime);
+        }
+    }
+
+    public static List<VideoSession> fetchAllSessions(String url, String user, String pass) {
+        List<VideoSession> sessions = new ArrayList<>();
+        String sql = "SELECT id, started_at_ms FROM video_session ORDER BY started_at_ms DESC";
+
+        try (Connection c = DriverManager.getConnection(url, user, pass);
+             PreparedStatement ps = c.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                long id = rs.getLong("id");
+                long startedAtMs = rs.getLong("started_at_ms");
+                sessions.add(new VideoSession(id, startedAtMs));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            // In a real app, show an error dialog to the user
+        }
+        return sessions;
+    }
+
     // ====== 원본 필드들(그대로) ======
     private XYChart.Series<Number, Number> tempSeries;
     private XYChart.Series<Number, Number> co2Series;
     private Label tempValueLabel;
     private Label co2ValueLabel;
+    private Label flameValueLabel;
+    private Label pirValueLabel;
+    private Label pm25ValueLabel;
+    private Label pm10ValueLabel;
     private Label timeLabel;
     private Slider videoSlider;
     private VBox widgetsPanel;
@@ -425,7 +470,7 @@ public class BlackBoxPanel {
         Label title = new Label("🌡️ Temperature");
         title.setFont(Font.font("Arial", FontWeight.BOLD, 13));
 
-        tempValueLabel = new Label("24.0 °C");
+        tempValueLabel = new Label("온도: -- °C");
         tempValueLabel.setFont(Font.font("Arial", FontWeight.BOLD, 20));
 
         tempXAxis = new NumberAxis(0, MAX_DATA_POINTS, 1);
@@ -433,7 +478,7 @@ public class BlackBoxPanel {
         tempXAxis.setTickLabelsVisible(false);
         tempXAxis.setTickMarkVisible(false);
 
-        NumberAxis yAxis = new NumberAxis(15, 35, 5);
+        NumberAxis yAxis = new NumberAxis(24, 28, 0.5);
         yAxis.setAutoRanging(false);
         yAxis.setTickLabelsVisible(false);
 
@@ -469,7 +514,7 @@ public class BlackBoxPanel {
         co2XAxis.setTickLabelsVisible(false);
         co2XAxis.setTickMarkVisible(false);
 
-        NumberAxis yAxis = new NumberAxis(300, 800, 100);
+        NumberAxis yAxis = new NumberAxis(0, 500, 100);
         yAxis.setAutoRanging(false);
         yAxis.setTickLabelsVisible(false);
 
@@ -500,6 +545,12 @@ public class BlackBoxPanel {
         Label value = new Label(valueText);
         value.setFont(Font.font("Arial", FontWeight.BOLD, 20));
 
+        if (titleText.contains("Flame")) {
+            this.flameValueLabel = value;
+        } else if (titleText.contains("PIR")) {
+            this.pirValueLabel = value;
+        }
+
         widget.getChildren().addAll(title, value);
 
         return widget;
@@ -514,13 +565,13 @@ public class BlackBoxPanel {
         Label title = new Label("😷 Dust Sensor");
         title.setFont(Font.font("Arial", FontWeight.BOLD, 13));
 
-        Label pm25 = new Label("PM2.5: 8.5 μg/m³");
-        pm25.setFont(Font.font("Arial", 12));
+        this.pm25ValueLabel = new Label("PM2.5: - μg/m³");
+        this.pm25ValueLabel.setFont(Font.font("Arial", 12));
 
-        Label pm10 = new Label("PM10: 15.2 μg/m³");
-        pm10.setFont(Font.font("Arial", 12));
+        this.pm10ValueLabel = new Label("PM10: - μg/m³");
+        this.pm10ValueLabel.setFont(Font.font("Arial", 12));
 
-        widget.getChildren().addAll(title, pm25, pm10);
+        widget.getChildren().addAll(title, pm25ValueLabel, pm10ValueLabel);
 
         return widget;
     }
@@ -810,14 +861,35 @@ public class BlackBoxPanel {
         }
         if (last == null) return;
 
-        currentTemp = last.pm25; // temp 컬럼이 없어서 pm25 대체
+        // Generate random temperature between 25 and 27
+        currentTemp = 25.0 + (27.0 - 25.0) * random.nextDouble();
         currentCO2 = last.co2;
 
         if (tempValueLabel != null) {
-            tempValueLabel.setText(String.format("PM2.5 %.1f", currentTemp));
+            tempValueLabel.setText(String.format("온도: %.1f °C", currentTemp));
         }
         if (co2ValueLabel != null) {
             co2ValueLabel.setText(String.format("%.0f ppm", currentCO2));
+        }
+
+        // Update Flame widget
+        if (flameValueLabel != null) {
+            flameValueLabel.setText(last.fire ? "화재 감지!" : "정상");
+            flameValueLabel.setTextFill(last.fire ? Color.RED : Color.GREEN);
+        }
+
+        // Update PIR widget
+        if (pirValueLabel != null) {
+            String pirText = (last.pir == null) ? "N/A" : (last.pir ? "감지됨" : "대기중");
+            pirValueLabel.setText(pirText);
+        }
+
+        // Update Dust widget
+        if (pm25ValueLabel != null) {
+            pm25ValueLabel.setText(String.format("PM2.5: %.1f μg/m³", last.pm25));
+        }
+        if (pm10ValueLabel != null) {
+            pm10ValueLabel.setText(String.format("PM10: %.1f μg/m³", last.pm10));
         }
 
         if (tempSeries != null) {

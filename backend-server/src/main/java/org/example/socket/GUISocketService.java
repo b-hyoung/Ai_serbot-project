@@ -8,6 +8,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class GUISocketService {
 
@@ -15,9 +16,11 @@ public class GUISocketService {
     private ServerSocket serverSocket;
     private volatile Socket guiSocket;      // GUI 소켓
     private final RobotSocketService robotService; // 로봇으로 명령 전달용
+    private final AtomicBoolean manualLlmTriggered;
 
-    public GUISocketService(RobotSocketService robotService) {
+    public GUISocketService(RobotSocketService robotService, AtomicBoolean manualLlmTriggered) {
         this.robotService = robotService;
+        this.manualLlmTriggered = manualLlmTriggered;
     }
 
     public boolean isConnected() {
@@ -78,6 +81,11 @@ public class GUISocketService {
                             // 이 역시 로봇으로 그대로 전달할 수도 있고,
                             // 서버에서 변환해서 보낼 수도 있음
                             robotService.sendToRobot(line);
+                        } else if ("MANUAL_LLM_TRIGGER".equals(type)) {
+                            System.out.println("🔥 MANUAL LLM TRIGGER RECEIVED");
+                            if (this.manualLlmTriggered != null) {
+                                this.manualLlmTriggered.set(true);
+                            }
                         } else {
                             // 기타 타입
                             robotService.sendToRobot(line);

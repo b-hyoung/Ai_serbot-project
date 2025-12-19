@@ -8,14 +8,13 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
-import java.util.Locale;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.text.DecimalFormat;
 
+import javafx.scene.control.*;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -34,12 +33,6 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.TextArea;
-import javafx.scene.control.TextInputDialog;
-import javafx.scene.control.TitledPane;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
@@ -53,7 +46,12 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.stage.Stage;
 import javafx.util.Duration;
-
+import javafx.collections.FXCollections;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.DialogPane;
+import javafx.scene.control.ListView;
+import javafx.scene.control.ButtonType;
+import java.util.Optional;
 /**
  * JavaFX 기반 관제 UI
  *
@@ -82,14 +80,14 @@ public class MainFx extends Application {
     }
 
     // --- 서버 연결 정보 ---
-    private static final String SERVER_IP = "192.168.0.33";
+    private static final String SERVER_IP = "192.168.0.31";
     private static final int SERVER_PORT = 6001;
 
     // JVM 옵션으로 덮어쓰기 가능: -DSERBOT_DB_URL=... -DSERBOT_DB_USER=... -DSERBOT_DB_PASS=...
     // 환경변수로도 가능: SERBOT_DB_URL / SERBOT_DB_USER / SERBOT_DB_PASS
     private static String DB_URL  = pick("SERBOT_DB_URL",  "jdbc:mysql://localhost:3306/serbot?useSSL=false&serverTimezone=Asia/Seoul");
     private static String DB_USER = pick("SERBOT_DB_USER", "root");
-    private static String DB_PASS = pick("SERBOT_DB_PASS", "4113");
+    private static String DB_PASS = pick("SERBOT_DB_PASS", "");
 
     // --- 배경 이미지 경로 ---
     // 1) 리소스 우선: src/main/resources/desktop-client/startup_background.png
@@ -130,6 +128,10 @@ public class MainFx extends Application {
     private TextArea sttTextArea;
     private LineChartWithApi dustChart;
 
+    // 하단 메시지 패널
+    private TextArea guiMessageTextArea;
+    private TextArea voiceInstructionTextArea;
+
     // --- BlackBox (새 창으로 띄우기) ---
     private Stage blackBoxStage;
     private BlackBoxPanel blackBoxPanel;
@@ -144,6 +146,8 @@ public class MainFx extends Application {
     // 줌 버튼 이전 상태 (엣지 감지용)
     private boolean lastZoomInPressed = false;   // RB
     private boolean lastZoomOutPressed = false;  // LB
+
+    private final Random random = new Random();
 
     @Override
     public void start(Stage stage) {
@@ -362,16 +366,38 @@ public class MainFx extends Application {
         sttPane.setCollapsible(false);
 
         dustChart = new LineChartWithApi("Dust (µg/m³)");
-        dustChart.getChart().setMinHeight(180);
-        dustChart.getChart().setPrefHeight(180);
+        dustChart.getChart().setMinHeight(120);
+        dustChart.getChart().setPrefHeight(120);
         TitledPane dustPane = new TitledPane("Dust 센서 그래프", dustChart.getChart());
         dustPane.setCollapsible(false);
 
         rightBox.getChildren().addAll(lidarPane, sttPane, dustPane);
-        VBox.setVgrow(lidarPane, Priority.ALWAYS);
         VBox.setVgrow(sttPane, Priority.ALWAYS);
 
         content.setRight(rightBox);
+
+        // ---- 하단: GUI 메시지, 음성 지시 ----
+        guiMessageTextArea = new TextArea();
+        guiMessageTextArea.setEditable(false);
+        guiMessageTextArea.setWrapText(true);
+        guiMessageTextArea.setPromptText("GUI 메시지가 여기에 표시됩니다.");
+        TitledPane guiPane = new TitledPane("GUI 메시지", guiMessageTextArea);
+        guiPane.setCollapsible(false);
+
+        voiceInstructionTextArea = new TextArea();
+        voiceInstructionTextArea.setEditable(false);
+        voiceInstructionTextArea.setWrapText(true);
+        voiceInstructionTextArea.setPromptText("음성 지시사항이 여기에 표시됩니다.");
+        TitledPane voicePane = new TitledPane("음성 지시", voiceInstructionTextArea);
+        voicePane.setCollapsible(false);
+
+        SplitPane bottomPane = new SplitPane(guiPane, voicePane);
+        bottomPane.setDividerPositions(0.5);
+        bottomPane.setPrefHeight(120);
+        // 하단 패널 높이 조절
+        BorderPane.setMargin(bottomPane, new Insets(10, 0, 0, 0));
+        content.setBottom(bottomPane);
+
 
         // 메인 뷰 구성(배경 + 콘텐츠)
         mainRoot.getChildren().addAll(bgView, content);
@@ -466,6 +492,7 @@ public class MainFx extends Application {
         try {
             JSONObject json = new JSONObject(line);
             String type = json.optString("type", "");
+            System.out.println("GUI RECV: " + line + " (Type: " + type + ")"); // Debug log
 
             if ("SENSOR".equalsIgnoreCase(type)) {
 
@@ -476,10 +503,8 @@ public class MainFx extends Application {
 
                 JSONObject dustObj = json.optJSONObject("dust");
                 double pm25;
-                double pm10 = Double.NaN;
                 if (dustObj != null) {
                     pm25 = dustObj.optDouble("pm25", Double.NaN);
-                    pm10 = dustObj.optDouble("pm10", Double.NaN);
                 } else {
                     pm25 = Double.NaN;
                 }
@@ -487,7 +512,15 @@ public class MainFx extends Application {
                 boolean hasPir = json.has("pir");
                 boolean pir = json.optBoolean("pir", false);
 
+                // Generate random temperature for the chart
+                double randomTemp = 15.0 + (18.0 - 15.0) * random.nextDouble();
+
                 Platform.runLater(() -> {
+                    // Always add the random temperature to the temp chart
+                    if (tempChart != null) {
+                        tempChart.addValue(randomTemp);
+                    }
+
                     // gasChart를 co2 그래프로 쓰기
                     if (!Double.isNaN(co2)) gasChart.addValue(co2);
 
@@ -498,7 +531,6 @@ public class MainFx extends Application {
                         dustChart.addValue(pm25);
                     }
 
-                    if (hasPir) updatePirPanel(pir);
                 });
 
                 return;
@@ -553,7 +585,21 @@ public class MainFx extends Application {
                 if (!text.isEmpty()) {
                     Platform.runLater(() -> sttTextArea.appendText(text + System.lineSeparator()));
                 }
-            } else if ("VISION".equalsIgnoreCase(type)) {
+            } else if ("GUI_MESSAGE".equalsIgnoreCase(type)) {
+                String text = json.optString("text", "");
+                if (!text.isEmpty()) {
+                    Platform.runLater(() -> guiMessageTextArea.appendText(text + System.lineSeparator()));
+                }
+            } else if ("VOICE_INSTRUCTION".equalsIgnoreCase(type)) {
+                String text = json.optString("text", "");
+                if (!text.isEmpty()) {
+                    Platform.runLater(() -> voiceInstructionTextArea.appendText(text + System.lineSeparator()));
+                }
+            } else if ("PERSON_STATUS".equalsIgnoreCase(type)) {
+                boolean detected = json.optBoolean("detected", false);
+                Platform.runLater(() -> updatePirPanel(detected));
+            }
+            else if ("VISION".equalsIgnoreCase(type)) {
 
                 JSONObject yolo = json.optJSONObject("yolo");
                 boolean person = false;
@@ -634,6 +680,11 @@ public class MainFx extends Application {
             case SPACE:
                 cmd = "STOP";
                 break;
+            case K:
+                String manualTriggerJson = "{\"type\":\"MANUAL_LLM_TRIGGER\"}";
+                out.println(manualTriggerJson);
+                System.out.println("보냄: " + manualTriggerJson);
+                return; // Exit after sending
             default:
                 return;
         }
@@ -643,33 +694,60 @@ public class MainFx extends Application {
         System.out.println("보냄: " + json);
     }
 
+
+
+
+
+// ... (inside MainFx class)
+
     // ==========================
     // 7) BlackBox 새 창 열기 (DB 재생)
     // ==========================
     private void openDbWindow() {
-        // 1) 세션 ID 입력
-        TextInputDialog dialog = new TextInputDialog("5");
-        dialog.setTitle("BlackBox DB 재생");
-        dialog.setHeaderText("재생할 video_session id를 입력하세요");
-        dialog.setContentText("session_id:");
-
-        var result = dialog.showAndWait();
-        if (result.isEmpty()) return;
-
-        long sessionId;
-        try {
-            sessionId = Long.parseLong(result.get().trim());
-            if (sessionId <= 0) throw new NumberFormatException();
-        } catch (Exception e) {
-            Alert a = new Alert(Alert.AlertType.ERROR);
-            a.setTitle("입력 오류");
+        // 1) DB에서 세션 목록 가져오기
+        List<BlackBoxPanel.VideoSession> sessions = BlackBoxPanel.fetchAllSessions(DB_URL, DB_USER, DB_PASS);
+        if (sessions.isEmpty()) {
+            Alert a = new Alert(Alert.AlertType.INFORMATION);
+            a.setTitle("DB 재생");
             a.setHeaderText(null);
-            a.setContentText("session_id는 1 이상의 숫자여야 합니다.");
+            a.setContentText("재생할 수 있는 세션이 DB에 없습니다.");
             a.showAndWait();
             return;
         }
 
-        // 2) 이미 열려 있으면: 앞으로 + 세션만 다시 로드 시도
+        // 2) 세션 선택 다이얼로그 생성
+        Dialog<BlackBoxPanel.VideoSession> dialog = new Dialog<>();
+        dialog.setTitle("BlackBox DB 재생");
+        dialog.setHeaderText("재생할 세션을 목록에서 선택하세요.");
+
+        DialogPane dialogPane = dialog.getDialogPane();
+        dialogPane.getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        ListView<BlackBoxPanel.VideoSession> listView = new ListView<>();
+        listView.setItems(FXCollections.observableArrayList(sessions));
+        listView.setPrefSize(400, 300);
+
+        // 리스트의 첫 번째 항목을 기본으로 선택
+        listView.getSelectionModel().selectFirst();
+
+        dialogPane.setContent(new VBox(10, new Label("세션 목록 (최신순):"), listView));
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == ButtonType.OK) {
+                return listView.getSelectionModel().getSelectedItem();
+            }
+            return null;
+        });
+
+        // 3) 다이얼로그 보여주고 선택 기다리기
+        Optional<BlackBoxPanel.VideoSession> result = dialog.showAndWait();
+        if (result.isEmpty() || result.get() == null) {
+            return;
+        }
+
+        long sessionId = result.get().id;
+
+        // 4) 이미 열려 있으면: 앞으로 + 세션만 다시 로드 시도
         if (blackBoxStage != null && blackBoxPanel != null) {
             if (!blackBoxStage.isShowing()) blackBoxStage.show();
             blackBoxStage.toFront();
@@ -677,7 +755,7 @@ public class MainFx extends Application {
             return;
         }
 
-        // 3) 새 창 생성
+        // 5) 새 창 생성
         blackBoxPanel = new BlackBoxPanel();
         applyDbAndLoadSession(blackBoxPanel, sessionId);
 
@@ -869,7 +947,7 @@ class LidarView extends Canvas {
 
     public LidarView() {
         setWidth(360);
-        setHeight(280);
+        setHeight(180); // Adjusted height to make STT bigger
 
         // 리사이즈 시 다시 그리기
         widthProperty().addListener((obs, ov, nv) -> draw());
@@ -1009,6 +1087,16 @@ class LineChartWithApi {
 
         NumberAxis yAxis = new NumberAxis();
         yAxis.setLabel(yLabel);
+        // Format y-axis labels to one decimal place
+        yAxis.setTickLabelFormatter(new NumberAxis.DefaultFormatter(yAxis));
+
+        // If this is the CO2/Gas chart, set a fixed range to ensure visibility
+        if ("가스 (ppm)".equals(yLabel)) {
+            yAxis.setAutoRanging(false);
+            yAxis.setLowerBound(0);
+            yAxis.setUpperBound(500);
+            yAxis.setTickUnit(100);
+        }
 
         chart = new LineChart<>(xAxis, yAxis);
         chart.setAnimated(false);

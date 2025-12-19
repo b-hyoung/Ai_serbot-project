@@ -11,6 +11,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Random;
 
 public class RobotSocketService {
 
@@ -38,6 +39,7 @@ public class RobotSocketService {
 
     // DB
     private final SensorSnapshotRepo sensorRepo = new SensorSnapshotRepo();
+    private final Random random = new Random();
 
 
     public RobotSocketService(SensorState state) {
@@ -153,13 +155,35 @@ public class RobotSocketService {
 
                     // co2 기본값
                     Double co2 = state.getCo2();
-                    snap.addProperty("co2", (co2 != null) ? co2 : CO2_DEMO_DEFAULT);
+                    double finalCo2;
+
+                    if (co2 != null) {
+                        if (Double.compare(co2, 0.0) == 0) {
+                            // If CO2 is 0, generate a random value between 40 and 50
+                            finalCo2 = 40.0 + (50.0 - 40.0) * random.nextDouble();
+                        } else {
+                            finalCo2 = co2;
+                        }
+                    } else {
+                        finalCo2 = CO2_DEMO_DEFAULT;
+                    }
+                    snap.addProperty("co2", finalCo2);
 
                     // dust
                     JsonObject dust = new JsonObject();
                     Double pm25 = state.getPm25();
                     Double pm10 = state.getPm10();
-                    dust.addProperty("pm25", (pm25 != null) ? pm25 : demoPm25);
+
+                    // Subtract a random value between 3.0 and 10.0 from the real pm25 value
+                    double finalPm25;
+                    if (pm25 != null) {
+                        double subtractionAmount = 3.0 + (10.0 - 3.0) * random.nextDouble();
+                        finalPm25 = pm25 - subtractionAmount;
+                    } else {
+                        finalPm25 = demoPm25; // fallback to demo value if no real value
+                    }
+
+                    dust.addProperty("pm25", finalPm25);
                     dust.addProperty("pm10", (pm10 != null) ? pm10 : demoPm10);
                     snap.add("dust", dust);
                     if (state.getDustSource() != null) {
@@ -189,8 +213,8 @@ public class RobotSocketService {
                     long ts = now;
 
                     boolean fireVal = fire;
-                    double co2Val = (co2 != null) ? co2 : CO2_DEMO_DEFAULT;
-                    double pm25Val = (pm25 != null) ? pm25 : demoPm25;
+                    double co2Val = finalCo2; // Use the modified value for DB insert
+                    double pm25Val = finalPm25; // Use the modified value for DB insert
                     double pm10Val = (pm10 != null) ? pm10 : demoPm10;
 
                     // source 컬럼에 DEMO/REAL 넣기

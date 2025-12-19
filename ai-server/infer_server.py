@@ -16,7 +16,7 @@ model = YOLO(MODEL_PATH)
 
 class InferReq(BaseModel):
     path: str
-    conf: float = 0.35  # 기본 confidence threshold
+    conf: float = 0.25  # 기본 confidence threshold
 
 @app.get("/health")
 def health():
